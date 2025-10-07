@@ -15,6 +15,8 @@ interface Visualization3DProps {
   constraintFunction: string
   criticalPoints: Array<{ x: number; y: number; z: number; type: string }>
   integralBounds: { xMin: number; xMax: number; yMin: number; yMax: number } | null
+  xRange: [number, number]
+  yRange: [number, number]
 }
 
 export function Visualization3D({
@@ -25,12 +27,14 @@ export function Visualization3D({
   constraintFunction,
   criticalPoints,
   integralBounds,
+  xRange,
+  yRange,
 }: Visualization3DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [rotation, setRotation] = useState({ x: 0.5, y: 0.5 })
-  const [zoom, setZoom] = useState(1)
+  const [rotation, setRotation] = useState({ x: 0.6, y: 0.8 })
+  const [zoom, setZoom] = useState(1.2)
   const [isAnimating, setIsAnimating] = useState(false)
-  const [viewMode, setViewMode] = useState<"surface" | "wireframe" | "contour">("surface")
+  const [viewMode, setViewMode] = useState<"surface" | "wireframe">("surface")
   const [showGradient, setShowGradient] = useState(true)
   const [showTangentPlane, setShowTangentPlane] = useState(true)
   const [hasInfiniteValues, setHasInfiniteValues] = useState(false)
@@ -39,29 +43,38 @@ export function Visualization3D({
   const lastMouse = useRef({ x: 0, y: 0 })
 
   const generateSurfaceData = () => {
-    const resolution = 40
-    const range = 5
-    const step = (range * 2) / resolution
+    const resolution = 60 // Aumentado de 50 a 60 para más detalle
+    const [xMin, xMax] = xRange
+    const [yMin, yMax] = yRange
+    const xStep = (xMax - xMin) / resolution
+    const yStep = (yMax - yMin) / resolution
     const points: { x: number; y: number; z: number }[] = []
     let infiniteCount = 0
+    let minZ = Number.POSITIVE_INFINITY
+    let maxZ = Number.NEGATIVE_INFINITY
 
     try {
       for (let i = 0; i <= resolution; i++) {
         for (let j = 0; j <= resolution; j++) {
-          const x = -range + i * step
-          const y = -range + j * step
-          const z = evaluateFunction(functionStr, x, y)
+          const x = xMin + i * xStep
+          const y = yMin + j * yStep
+          let z = evaluateFunction(functionStr, x, y)
 
           if (isNaN(z)) {
             infiniteCount++
             continue
           }
 
-          if (isFinite(z)) {
-            points.push({ x, y, z })
-          } else {
+          if (!isFinite(z)) {
             infiniteCount++
+            z = z > 0 ? 20 : -20 // Limitar a ±20
+          } else {
+            z = Math.max(-20, Math.min(20, z)) // Asegurar que esté dentro de límites
           }
+
+          minZ = Math.min(minZ, z)
+          maxZ = Math.max(maxZ, z)
+          points.push({ x, y, z })
         }
       }
 
@@ -70,7 +83,7 @@ export function Visualization3D({
       console.error("[v0] Error generating surface:", error)
     }
 
-    return points
+    return { points, minZ, maxZ }
   }
 
   const project3D = (x: number, y: number, z: number, width: number, height: number) => {
@@ -90,6 +103,145 @@ export function Visualization3D({
     const screenY = height / 2 - y1 * scale
 
     return { x: screenX, y: screenY, depth: z2 }
+  }
+
+  const drawBackgroundPlanes = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const [xMin, xMax] = xRange
+    const [yMin, yMax] = yRange
+    const zMin = -20
+    const zMax = 20
+
+    // Plano XY (fondo)
+    ctx.fillStyle = "rgba(240, 240, 245, 0.15)"
+    ctx.strokeStyle = "rgba(150, 150, 160, 0.4)"
+    ctx.lineWidth = 1
+
+    // Dibujar cuadrícula en plano XY
+    const gridSteps = 10
+    for (let i = 0; i <= gridSteps; i++) {
+      const x = xMin + (i / gridSteps) * (xMax - xMin)
+      const start = project3D(x, yMin, zMin, width, height)
+      const end = project3D(x, yMax, zMin, width, height)
+      ctx.beginPath()
+      ctx.moveTo(start.x, start.y)
+      ctx.lineTo(end.x, end.y)
+      ctx.stroke()
+    }
+
+    for (let i = 0; i <= gridSteps; i++) {
+      const y = yMin + (i / gridSteps) * (yMax - yMin)
+      const start = project3D(xMin, y, zMin, width, height)
+      const end = project3D(xMax, y, zMin, width, height)
+      ctx.beginPath()
+      ctx.moveTo(start.x, start.y)
+      ctx.lineTo(end.x, end.y)
+      ctx.stroke()
+    }
+
+    // Plano YZ (lateral izquierdo)
+    ctx.fillStyle = "rgba(240, 240, 245, 0.08)"
+    for (let i = 0; i <= gridSteps; i++) {
+      const y = yMin + (i / gridSteps) * (yMax - yMin)
+      const start = project3D(xMin, y, zMin, width, height)
+      const end = project3D(xMin, y, zMax, width, height)
+      ctx.beginPath()
+      ctx.moveTo(start.x, start.y)
+      ctx.lineTo(end.x, end.y)
+      ctx.stroke()
+    }
+
+    for (let i = 0; i <= gridSteps; i++) {
+      const z = zMin + (i / gridSteps) * (zMax - zMin)
+      const start = project3D(xMin, yMin, z, width, height)
+      const end = project3D(xMin, yMax, z, width, height)
+      ctx.beginPath()
+      ctx.moveTo(start.x, start.y)
+      ctx.lineTo(end.x, end.y)
+      ctx.stroke()
+    }
+
+    // Plano XZ (lateral derecho)
+    for (let i = 0; i <= gridSteps; i++) {
+      const x = xMin + (i / gridSteps) * (xMax - xMin)
+      const start = project3D(x, yMin, zMin, width, height)
+      const end = project3D(x, yMin, zMax, width, height)
+      ctx.beginPath()
+      ctx.moveTo(start.x, start.y)
+      ctx.lineTo(end.x, end.y)
+      ctx.stroke()
+    }
+  }
+
+  const drawAxesWithLabels = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const [xMin, xMax] = xRange
+    const [yMin, yMax] = yRange
+    const origin = project3D(0, 0, 0, width, height)
+
+    // Eje X (rojo)
+    const xEnd = project3D(xMax, 0, 0, width, height)
+    ctx.strokeStyle = "rgba(220, 38, 38, 0.9)"
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.moveTo(origin.x, origin.y)
+    ctx.lineTo(xEnd.x, xEnd.y)
+    ctx.stroke()
+
+    ctx.fillStyle = "rgba(220, 38, 38, 1)"
+    ctx.font = "bold 18px sans-serif"
+    ctx.fillText("X", xEnd.x + 15, xEnd.y + 5)
+
+    // Números en eje X
+    ctx.font = "13px sans-serif"
+    const xSteps = 5
+    for (let i = 0; i <= xSteps; i++) {
+      const x = xMin + (i / xSteps) * (xMax - xMin)
+      const pos = project3D(x, 0, 0, width, height)
+      ctx.fillText(x.toFixed(1), pos.x, pos.y + 20)
+    }
+
+    // Eje Y (verde)
+    const yEnd = project3D(0, yMax, 0, width, height)
+    ctx.strokeStyle = "rgba(34, 197, 94, 0.9)"
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.moveTo(origin.x, origin.y)
+    ctx.lineTo(yEnd.x, yEnd.y)
+    ctx.stroke()
+
+    ctx.fillStyle = "rgba(34, 197, 94, 1)"
+    ctx.font = "bold 18px sans-serif"
+    ctx.fillText("Y", yEnd.x - 25, yEnd.y + 5)
+
+    // Números en eje Y
+    ctx.font = "13px sans-serif"
+    const ySteps = 5
+    for (let i = 0; i <= ySteps; i++) {
+      const y = yMin + (i / ySteps) * (yMax - yMin)
+      const pos = project3D(0, y, 0, width, height)
+      ctx.fillText(y.toFixed(1), pos.x - 30, pos.y + 5)
+    }
+
+    // Eje Z (azul)
+    const zEnd = project3D(0, 0, 20, width, height)
+    ctx.strokeStyle = "rgba(59, 130, 246, 0.9)"
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.moveTo(origin.x, origin.y)
+    ctx.lineTo(zEnd.x, zEnd.y)
+    ctx.stroke()
+
+    ctx.fillStyle = "rgba(59, 130, 246, 1)"
+    ctx.font = "bold 18px sans-serif"
+    ctx.fillText("Z", zEnd.x - 10, zEnd.y - 15)
+
+    // Números en eje Z
+    ctx.font = "13px sans-serif"
+    const zSteps = 5
+    for (let i = 0; i <= zSteps; i++) {
+      const z = -20 + (i / zSteps) * 40
+      const pos = project3D(0, 0, z, width, height)
+      ctx.fillText(z.toFixed(0), pos.x + 15, pos.y)
+    }
   }
 
   const drawIntegrationRegion = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
@@ -219,8 +371,10 @@ export function Visualization3D({
     if (activeTab !== "optimization" || !constraintFunction) return
 
     const resolution = 100
-    const range = 5
-    const step = (range * 2) / resolution
+    const [xMin, xMax] = xRange
+    const [yMin, yMax] = yRange
+    const xStep = (xMax - xMin) / resolution
+    const yStep = (yMax - yMin) / resolution
 
     ctx.strokeStyle = "oklch(0.7 0.19 195)"
     ctx.lineWidth = 3
@@ -229,8 +383,8 @@ export function Visualization3D({
 
     for (let i = 0; i <= resolution; i++) {
       for (let j = 0; j <= resolution; j++) {
-        const x = -range + i * step
-        const y = -range + j * step
+        const x = xMin + i * xStep
+        const y = yMin + j * yStep
         const g = evaluateFunction(constraintFunction, x, y)
 
         if (isNaN(g)) continue
@@ -291,7 +445,7 @@ export function Visualization3D({
     ctx.fillStyle = getComputedStyle(canvas).getPropertyValue("--color-background") || "#ffffff"
     ctx.fillRect(0, 0, width, height)
 
-    const points = generateSurfaceData()
+    const { points, minZ, maxZ } = generateSurfaceData()
 
     if (points.length === 0) {
       ctx.fillStyle = getComputedStyle(canvas).getPropertyValue("--color-muted-foreground") || "#666666"
@@ -300,6 +454,8 @@ export function Visualization3D({
       ctx.fillText("Error: Función inválida o sin valores finitos", width / 2, height / 2)
       return
     }
+
+    drawBackgroundPlanes(ctx, width, height)
 
     const projectedPoints = points.map((p) => ({
       ...p,
@@ -310,52 +466,76 @@ export function Visualization3D({
 
     const resolution = Math.sqrt(points.length)
 
-    if (viewMode === "surface" || viewMode === "wireframe") {
-      for (let i = 0; i < resolution - 1; i++) {
-        for (let j = 0; j < resolution - 1; j++) {
-          const idx = i * resolution + j
-          const p1 = projectedPoints[idx]
-          const p2 = projectedPoints[idx + 1]
-          const p3 = projectedPoints[idx + resolution]
-          const p4 = projectedPoints[idx + resolution + 1]
+    for (let i = 0; i < resolution - 1; i++) {
+      for (let j = 0; j < resolution - 1; j++) {
+        const idx = i * resolution + j
+        const p1 = projectedPoints[idx]
+        const p2 = projectedPoints[idx + 1]
+        const p3 = projectedPoints[idx + resolution]
+        const p4 = projectedPoints[idx + resolution + 1]
 
-          if (!p1 || !p2 || !p3 || !p4) continue
+        if (!p1 || !p2 || !p3 || !p4) continue
 
-          const avgZ = (p1.z + p2.z + p3.z + p4.z) / 4
-          const normalizedZ = Math.max(0, Math.min(1, (avgZ + 10) / 20))
+        const avgZ = (p1.z + p2.z + p3.z + p4.z) / 4
+        const normalizedZ = (avgZ - minZ) / (maxZ - minZ || 1)
 
-          if (viewMode === "surface") {
-            const hue = 195 + normalizedZ * 90
-            const lightness = 0.5 + normalizedZ * 0.3
-            ctx.fillStyle = `oklch(${lightness} 0.15 ${hue})`
-
-            ctx.beginPath()
-            ctx.moveTo(p1.projected.x, p1.projected.y)
-            ctx.lineTo(p2.projected.x, p2.projected.y)
-            ctx.lineTo(p4.projected.x, p4.projected.y)
-            ctx.lineTo(p3.projected.x, p3.projected.y)
-            ctx.closePath()
-            ctx.fill()
-
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.05)"
-            ctx.lineWidth = 0.5
-            ctx.stroke()
-          } else {
-            ctx.strokeStyle = `oklch(0.65 0.19 195)`
-            ctx.lineWidth = 1
-            ctx.beginPath()
-            ctx.moveTo(p1.projected.x, p1.projected.y)
-            ctx.lineTo(p2.projected.x, p2.projected.y)
-            ctx.lineTo(p4.projected.x, p4.projected.y)
-            ctx.lineTo(p3.projected.x, p3.projected.y)
-            ctx.closePath()
-            ctx.stroke()
-          }
+        // Gradiente de colores: azul → cyan → verde → amarillo → rojo
+        let hue, saturation, lightness
+        if (normalizedZ < 0.25) {
+          // Azul a Cyan
+          const t = normalizedZ / 0.25
+          hue = 240 - t * 45 // 240 (azul) a 195 (cyan)
+          saturation = 0.7 + t * 0.1
+          lightness = 0.45 + t * 0.1
+        } else if (normalizedZ < 0.5) {
+          // Cyan a Verde
+          const t = (normalizedZ - 0.25) / 0.25
+          hue = 195 - t * 55 // 195 (cyan) a 140 (verde)
+          saturation = 0.8
+          lightness = 0.55 + t * 0.05
+        } else if (normalizedZ < 0.75) {
+          // Verde a Amarillo
+          const t = (normalizedZ - 0.5) / 0.25
+          hue = 140 - t * 80 // 140 (verde) a 60 (amarillo)
+          saturation = 0.8 - t * 0.1
+          lightness = 0.6 + t * 0.05
+        } else {
+          // Amarillo a Rojo
+          const t = (normalizedZ - 0.75) / 0.25
+          hue = 60 - t * 60 // 60 (amarillo) a 0 (rojo)
+          saturation = 0.7 + t * 0.2
+          lightness = 0.65 - t * 0.1
         }
+
+        // Dibujar cara con relleno
+        if (viewMode === "surface") {
+          ctx.fillStyle = `oklch(${lightness} ${saturation} ${hue})`
+          ctx.beginPath()
+          ctx.moveTo(p1.projected.x, p1.projected.y)
+          ctx.lineTo(p2.projected.x, p2.projected.y)
+          ctx.lineTo(p4.projected.x, p4.projected.y)
+          ctx.lineTo(p3.projected.x, p3.projected.y)
+          ctx.closePath()
+          ctx.fill()
+        }
+
+        // Dibujar líneas de la malla
+        ctx.strokeStyle = `oklch(${lightness * 0.8} ${saturation * 0.9} ${hue})`
+        ctx.lineWidth = viewMode === "wireframe" ? 0.8 : 0.5
+
+        ctx.beginPath()
+        ctx.moveTo(p1.projected.x, p1.projected.y)
+        ctx.lineTo(p2.projected.x, p2.projected.y)
+        ctx.stroke()
+
+        ctx.beginPath()
+        ctx.moveTo(p1.projected.x, p1.projected.y)
+        ctx.lineTo(p3.projected.x, p3.projected.y)
+        ctx.stroke()
       }
     }
 
-    drawAxes(ctx, width, height)
+    drawAxesWithLabels(ctx, width, height)
     drawIntegrationRegion(ctx, width, height)
     drawConstraintCurve(ctx, width, height)
     drawTangentPlane(ctx, width, height)
@@ -381,37 +561,10 @@ export function Visualization3D({
     }
   }
 
-  const drawAxes = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    const axisLength = 5
-    const origin = project3D(0, 0, 0, width, height)
-
-    const xEnd = project3D(axisLength, 0, 0, width, height)
-    ctx.strokeStyle = "oklch(0.60 0.25 30)"
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.moveTo(origin.x, origin.y)
-    ctx.lineTo(xEnd.x, xEnd.y)
-    ctx.stroke()
-
-    const yEnd = project3D(0, axisLength, 0, width, height)
-    ctx.strokeStyle = "oklch(0.65 0.20 140)"
-    ctx.beginPath()
-    ctx.moveTo(origin.x, origin.y)
-    ctx.lineTo(yEnd.x, yEnd.y)
-    ctx.stroke()
-
-    const zEnd = project3D(0, 0, axisLength, width, height)
-    ctx.strokeStyle = "oklch(0.65 0.19 240)"
-    ctx.beginPath()
-    ctx.moveTo(origin.x, origin.y)
-    ctx.lineTo(zEnd.x, zEnd.y)
-    ctx.stroke()
-  }
-
   useEffect(() => {
     if (isAnimating) {
       const animate = () => {
-        setRotation((prev) => ({ ...prev, y: prev.y + 0.01 }))
+        setRotation((prev) => ({ ...prev, y: prev.y + 0.005 })) // Rotación más lenta
         animationRef.current = requestAnimationFrame(animate)
       }
       animationRef.current = requestAnimationFrame(animate)
@@ -441,6 +594,8 @@ export function Visualization3D({
     constraintFunction,
     criticalPoints,
     integralBounds,
+    xRange,
+    yRange,
   ])
 
   useEffect(() => {
@@ -500,7 +655,7 @@ export function Visualization3D({
     const clickX = e.clientX - rect.left
     const clickY = e.clientY - rect.top
 
-    const points = generateSurfaceData()
+    const { points } = generateSurfaceData()
     let closestPoint = null
     let minDistance = Number.POSITIVE_INFINITY
 
@@ -555,8 +710,8 @@ export function Visualization3D({
               variant="ghost"
               size="icon"
               onClick={() => {
-                setRotation({ x: 0.5, y: 0.5 })
-                setZoom(1)
+                setRotation({ x: 0.6, y: 0.8 })
+                setZoom(1.2)
               }}
               title="Resetear vista"
             >
@@ -579,7 +734,7 @@ export function Visualization3D({
               variant={viewMode === "surface" ? "default" : "ghost"}
               size="icon"
               onClick={() => setViewMode("surface")}
-              title="Vista sólida"
+              title="Vista sólida con malla"
             >
               <Box className="h-4 w-4" />
             </Button>
@@ -587,7 +742,7 @@ export function Visualization3D({
               variant={viewMode === "wireframe" ? "default" : "ghost"}
               size="icon"
               onClick={() => setViewMode("wireframe")}
-              title="Vista wireframe"
+              title="Solo malla"
             >
               <Grid3x3 className="h-4 w-4" />
             </Button>

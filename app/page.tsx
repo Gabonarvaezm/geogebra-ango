@@ -22,6 +22,8 @@ export default function Home() {
     volume: number
     bounds: { xMin: number; xMax: number; yMin: number; yMax: number }
   } | null>(null)
+  const [xRange, setXRange] = useState<[number, number]>([-5, 5])
+  const [yRange, setYRange] = useState<[number, number]>([-5, 5])
   const { toast } = useToast()
 
   useEffect(() => {
@@ -54,6 +56,10 @@ export default function Home() {
         onConstraintChange={setConstraintFunction}
         onCriticalPointsCalculated={setCriticalPoints}
         onIntegralCalculated={setIntegralResult}
+        xRange={xRange}
+        yRange={yRange}
+        onXRangeChange={setXRange}
+        onYRangeChange={setYRange}
       />
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -87,6 +93,8 @@ export default function Home() {
             constraintFunction={constraintFunction}
             criticalPoints={criticalPoints}
             integralBounds={integralResult?.bounds || null}
+            xRange={xRange}
+            yRange={yRange}
           />
         </div>
 

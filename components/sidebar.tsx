@@ -27,6 +27,10 @@ interface SidebarProps {
     volume: number
     bounds: { xMin: number; xMax: number; yMin: number; yMax: number }
   }) => void
+  xRange: [number, number]
+  yRange: [number, number]
+  onXRangeChange: (range: [number, number]) => void
+  onYRangeChange: (range: [number, number]) => void
 }
 
 const EXAMPLE_FUNCTIONS = [
@@ -51,6 +55,10 @@ export function Sidebar({
   onConstraintChange,
   onCriticalPointsCalculated,
   onIntegralCalculated,
+  xRange,
+  yRange,
+  onXRangeChange,
+  onYRangeChange,
 }: SidebarProps) {
   const [inputValue, setInputValue] = useState(currentFunction)
   const [xMin, setXMin] = useState(-2)
@@ -219,6 +227,66 @@ export function Sidebar({
                   <p className="text-xs text-muted-foreground">Funciones: sin, cos, tan, exp, log, sqrt, abs</p>
                   <p className="text-xs text-muted-foreground">Constantes: pi, e</p>
                   <p className="text-xs text-muted-foreground">Ejemplos: x^2+y^2, sin(x)*cos(y), exp(-x^2-y^2)</p>
+                </div>
+
+                <div className="space-y-3">
+                  <Label>Rango de Visualización</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="x-range-min" className="text-xs">
+                        X mín
+                      </Label>
+                      <Input
+                        id="x-range-min"
+                        type="number"
+                        value={xRange[0]}
+                        onChange={(e) => onXRangeChange([Number(e.target.value), xRange[1]])}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="x-range-max" className="text-xs">
+                        X máx
+                      </Label>
+                      <Input
+                        id="x-range-max"
+                        type="number"
+                        value={xRange[1]}
+                        onChange={(e) => onXRangeChange([xRange[0], Number(e.target.value)])}
+                        className="h-8"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="y-range-min" className="text-xs">
+                        Y mín
+                      </Label>
+                      <Input
+                        id="y-range-min"
+                        type="number"
+                        value={yRange[0]}
+                        onChange={(e) => onYRangeChange([Number(e.target.value), yRange[1]])}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="y-range-max" className="text-xs">
+                        Y máx
+                      </Label>
+                      <Input
+                        id="y-range-max"
+                        type="number"
+                        value={yRange[1]}
+                        onChange={(e) => onYRangeChange([yRange[0], Number(e.target.value)])}
+                        className="h-8"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Ajusta los límites de los ejes X e Y para la visualización
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -409,3 +477,4 @@ export function Sidebar({
     </>
   )
 }
+ 
