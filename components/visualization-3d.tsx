@@ -33,15 +33,17 @@ export function Visualization3D({
   const [viewMode, setViewMode] = useState<"surface" | "wireframe" | "contour">("surface")
   const [showGradient, setShowGradient] = useState(true)
   const [showTangentPlane, setShowTangentPlane] = useState(true)
+  const [hasInfiniteValues, setHasInfiniteValues] = useState(false)
   const animationRef = useRef<number>()
   const isDragging = useRef(false)
   const lastMouse = useRef({ x: 0, y: 0 })
 
   const generateSurfaceData = () => {
-    const resolution = 50
+    const resolution = 40
     const range = 5
     const step = (range * 2) / resolution
     const points: { x: number; y: number; z: number }[] = []
+    let infiniteCount = 0
 
     try {
       for (let i = 0; i <= resolution; i++) {
@@ -50,11 +52,20 @@ export function Visualization3D({
           const y = -range + j * step
           const z = evaluateFunction(functionStr, x, y)
 
+          if (isNaN(z)) {
+            infiniteCount++
+            continue
+          }
+
           if (isFinite(z)) {
             points.push({ x, y, z })
+          } else {
+            infiniteCount++
           }
         }
       }
+
+      setHasInfiniteValues(infiniteCount > resolution * resolution * 0.1)
     } catch (error) {
       console.error("[v0] Error generating surface:", error)
     }
@@ -205,7 +216,7 @@ export function Visualization3D({
   }
 
   const drawConstraintCurve = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    if (activeTab !== "optimization") return
+    if (activeTab !== "optimization" || !constraintFunction) return
 
     const resolution = 100
     const range = 5
@@ -222,9 +233,11 @@ export function Visualization3D({
         const y = -range + j * step
         const g = evaluateFunction(constraintFunction, x, y)
 
+        if (isNaN(g)) continue
+
         if (Math.abs(g) < 0.1) {
           const z = evaluateFunction(functionStr, x, y)
-          if (isFinite(z)) {
+          if (!isNaN(z) && isFinite(z)) {
             const proj = project3D(x, y, z, width, height)
 
             if (!isDrawing) {
@@ -284,7 +297,7 @@ export function Visualization3D({
       ctx.fillStyle = getComputedStyle(canvas).getPropertyValue("--color-muted-foreground") || "#666666"
       ctx.font = "16px sans-serif"
       ctx.textAlign = "center"
-      ctx.fillText("Error al evaluar la función", width / 2, height / 2)
+      ctx.fillText("Error: Función inválida o sin valores finitos", width / 2, height / 2)
       return
     }
 
@@ -309,11 +322,12 @@ export function Visualization3D({
           if (!p1 || !p2 || !p3 || !p4) continue
 
           const avgZ = (p1.z + p2.z + p3.z + p4.z) / 4
-          const normalizedZ = (avgZ + 5) / 10
+          const normalizedZ = Math.max(0, Math.min(1, (avgZ + 10) / 20))
 
           if (viewMode === "surface") {
             const hue = 195 + normalizedZ * 90
-            ctx.fillStyle = `oklch(${0.6 + normalizedZ * 0.2} 0.2 ${hue})`
+            const lightness = 0.5 + normalizedZ * 0.3
+            ctx.fillStyle = `oklch(${lightness} 0.15 ${hue})`
 
             ctx.beginPath()
             ctx.moveTo(p1.projected.x, p1.projected.y)
@@ -322,17 +336,21 @@ export function Visualization3D({
             ctx.lineTo(p3.projected.x, p3.projected.y)
             ctx.closePath()
             ctx.fill()
-          }
 
-          ctx.strokeStyle = viewMode === "wireframe" ? `oklch(0.65 0.19 195)` : "rgba(255, 255, 255, 0.1)"
-          ctx.lineWidth = viewMode === "wireframe" ? 1 : 0.5
-          ctx.beginPath()
-          ctx.moveTo(p1.projected.x, p1.projected.y)
-          ctx.lineTo(p2.projected.x, p2.projected.y)
-          ctx.lineTo(p4.projected.x, p4.projected.y)
-          ctx.lineTo(p3.projected.x, p3.projected.y)
-          ctx.closePath()
-          ctx.stroke()
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.05)"
+            ctx.lineWidth = 0.5
+            ctx.stroke()
+          } else {
+            ctx.strokeStyle = `oklch(0.65 0.19 195)`
+            ctx.lineWidth = 1
+            ctx.beginPath()
+            ctx.moveTo(p1.projected.x, p1.projected.y)
+            ctx.lineTo(p2.projected.x, p2.projected.y)
+            ctx.lineTo(p4.projected.x, p4.projected.y)
+            ctx.lineTo(p3.projected.x, p3.projected.y)
+            ctx.closePath()
+            ctx.stroke()
+          }
         }
       }
     }
@@ -353,6 +371,13 @@ export function Visualization3D({
       ctx.strokeStyle = "oklch(0.99 0.005 240)"
       ctx.lineWidth = 2
       ctx.stroke()
+    }
+
+    if (hasInfiniteValues) {
+      ctx.fillStyle = "oklch(0.60 0.25 30)"
+      ctx.font = "12px sans-serif"
+      ctx.textAlign = "left"
+      ctx.fillText("⚠ Algunos valores tienden a infinito (limitados a ±20)", 10, height - 10)
     }
   }
 

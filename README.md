@@ -143,14 +143,3 @@ npm run dev -- -p 3001
 - **Canvas 2D API** - Renderizado 3D
 - **shadcn/ui** - Componentes de UI
 
-## Soporte
-
-Si encuentras problemas o tienes preguntas:
-
-1. Revisa esta documentación
-2. Verifica la consola del navegador para errores
-3. Asegúrate de tener la versión correcta de Node.js
-
-## Licencia
-
-Este proyecto fue creado con v0 by Vercel.

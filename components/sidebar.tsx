@@ -35,6 +35,9 @@ const EXAMPLE_FUNCTIONS = [
   { name: "Gaussiana", formula: "exp(-(x^2 + y^2))", description: "Distribución normal 2D" },
   { name: "Ondas", formula: "sin(sqrt(x^2 + y^2))", description: "Patrón de ondas radiales" },
   { name: "Cono", formula: "sqrt(x^2 + y^2)", description: "Superficie cónica" },
+  { name: "Plano Inclinado", formula: "x + y", description: "Plano simple" },
+  { name: "Coseno 2D", formula: "cos(x) * cos(y)", description: "Patrón de ondas" },
+  { name: "Función Racional", formula: "1 / (1 + x^2 + y^2)", description: "Pico suave" },
 ]
 
 export function Sidebar({
@@ -57,21 +60,50 @@ export function Sidebar({
   const { toast } = useToast()
 
   const handleApply = () => {
+    if (!inputValue.trim()) {
+      toast({
+        title: "Error",
+        description: "La función no puede estar vacía",
+        variant: "destructive",
+      })
+      return
+    }
     onFunctionChange(inputValue)
+    toast({
+      title: "Función actualizada",
+      description: "La visualización se ha actualizado",
+    })
   }
 
   const handleCalculateCriticalPoints = () => {
+    if (!constraintFunction.trim()) {
+      toast({
+        title: "Error",
+        description: "Debes ingresar una restricción g(x,y) = 0",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       const points = findLagrangeCriticalPoints(currentFunction, constraintFunction)
       onCriticalPointsCalculated(points)
-      toast({
-        title: "Puntos críticos calculados",
-        description: `Se encontraron ${points.length} punto(s) crítico(s)`,
-      })
+
+      if (points.length === 0) {
+        toast({
+          title: "Sin resultados",
+          description: "No se encontraron puntos críticos en el rango de búsqueda",
+        })
+      } else {
+        toast({
+          title: "Puntos críticos calculados",
+          description: `Se encontraron ${points.length} punto(s) crítico(s)`,
+        })
+      }
     } catch (error) {
       toast({
         title: "Error",
-        description: "No se pudieron calcular los puntos críticos",
+        description: "No se pudieron calcular los puntos críticos. Verifica las funciones.",
         variant: "destructive",
       })
     }
@@ -173,12 +205,20 @@ export function Sidebar({
                       onChange={(e) => setInputValue(e.target.value)}
                       placeholder="Ej: x^2 + y^2"
                       className="font-mono"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          handleApply()
+                        }
+                      }}
                     />
                     <Button onClick={handleApply} size="icon">
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">Usa: +, -, *, /, ^, sqrt(), sin(), cos(), exp()</p>
+                  <p className="text-xs text-muted-foreground">Operadores: +, -, *, /, ^ (potencia)</p>
+                  <p className="text-xs text-muted-foreground">Funciones: sin, cos, tan, exp, log, sqrt, abs</p>
+                  <p className="text-xs text-muted-foreground">Constantes: pi, e</p>
+                  <p className="text-xs text-muted-foreground">Ejemplos: x^2+y^2, sin(x)*cos(y), exp(-x^2-y^2)</p>
                 </div>
 
                 <div className="space-y-2">
