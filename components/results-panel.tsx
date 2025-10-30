@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ChevronUp, ChevronDown } from "lucide-react"
-import { calculatePartialDerivatives } from "@/lib/math-parser"
+import { calculatePartialDerivatives, calculateDomainAndRange } from "@/lib/math-parser"
 
 interface ResultsPanelProps {
   currentFunction: string
@@ -31,6 +31,8 @@ export function ResultsPanel({
 
   const renderFunctionInfo = () => {
     try {
+      const domainRangeInfo = calculateDomainAndRange(currentFunction, -5, 5, -5, 5)
+
       return (
         <div className="space-y-3">
           <div>
@@ -40,11 +42,26 @@ export function ResultsPanel({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-sm font-medium text-muted-foreground">Dominio</p>
-              <p className="text-sm">ℝ²</p>
+              <p className="text-sm">{domainRangeInfo.domain}</p>
+              {domainRangeInfo.hasRestrictions && (
+                <div className="mt-2 space-y-1">
+                  {domainRangeInfo.restrictions.map((restriction, i) => (
+                    <p key={i} className="text-xs text-muted-foreground">
+                      • {restriction}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground">Rango</p>
-              <p className="text-sm">ℝ</p>
+              {isFinite(domainRangeInfo.range.min) && isFinite(domainRangeInfo.range.max) ? (
+                <p className="text-sm">
+                  [{domainRangeInfo.range.min.toFixed(2)}, {domainRangeInfo.range.max.toFixed(2)}]
+                </p>
+              ) : (
+                <p className="text-sm">ℝ</p>
+              )}
             </div>
           </div>
         </div>
