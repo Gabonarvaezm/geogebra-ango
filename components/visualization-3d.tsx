@@ -43,7 +43,7 @@ export function Visualization3D({
   const lastMouse = useRef({ x: 0, y: 0 })
 
   const generateSurfaceData = () => {
-    const resolution = 60 // Aumentado de 50 a 60 para más detalle
+    const resolution = 120
     const [xMin, xMax] = xRange
     const [yMin, yMax] = yRange
     const xStep = (xMax - xMin) / resolution
@@ -67,9 +67,9 @@ export function Visualization3D({
 
           if (!isFinite(z)) {
             infiniteCount++
-            z = z > 0 ? 20 : -20 // Limitar a ±20
+            z = z > 0 ? 20 : -20
           } else {
-            z = Math.max(-20, Math.min(20, z)) // Asegurar que esté dentro de límites
+            z = Math.max(-20, Math.min(20, z))
           }
 
           minZ = Math.min(minZ, z)
@@ -111,12 +111,10 @@ export function Visualization3D({
     const zMin = -20
     const zMax = 20
 
-    // Plano XY (fondo)
     ctx.fillStyle = "rgba(240, 240, 245, 0.15)"
     ctx.strokeStyle = "rgba(150, 150, 160, 0.4)"
     ctx.lineWidth = 1
 
-    // Dibujar cuadrícula en plano XY
     const gridSteps = 10
     for (let i = 0; i <= gridSteps; i++) {
       const x = xMin + (i / gridSteps) * (xMax - xMin)
@@ -138,7 +136,6 @@ export function Visualization3D({
       ctx.stroke()
     }
 
-    // Plano YZ (lateral izquierdo)
     ctx.fillStyle = "rgba(240, 240, 245, 0.08)"
     for (let i = 0; i <= gridSteps; i++) {
       const y = yMin + (i / gridSteps) * (yMax - yMin)
@@ -160,7 +157,6 @@ export function Visualization3D({
       ctx.stroke()
     }
 
-    // Plano XZ (lateral derecho)
     for (let i = 0; i <= gridSteps; i++) {
       const x = xMin + (i / gridSteps) * (xMax - xMin)
       const start = project3D(x, yMin, zMin, width, height)
@@ -177,7 +173,6 @@ export function Visualization3D({
     const [yMin, yMax] = yRange
     const origin = project3D(0, 0, 0, width, height)
 
-    // Eje X (rojo)
     const xEnd = project3D(xMax, 0, 0, width, height)
     ctx.strokeStyle = "rgba(220, 38, 38, 0.9)"
     ctx.lineWidth = 3
@@ -190,7 +185,6 @@ export function Visualization3D({
     ctx.font = "bold 18px sans-serif"
     ctx.fillText("X", xEnd.x + 15, xEnd.y + 5)
 
-    // Números en eje X
     ctx.font = "13px sans-serif"
     const xSteps = 5
     for (let i = 0; i <= xSteps; i++) {
@@ -199,7 +193,6 @@ export function Visualization3D({
       ctx.fillText(x.toFixed(1), pos.x, pos.y + 20)
     }
 
-    // Eje Y (verde)
     const yEnd = project3D(0, yMax, 0, width, height)
     ctx.strokeStyle = "rgba(34, 197, 94, 0.9)"
     ctx.lineWidth = 3
@@ -212,7 +205,6 @@ export function Visualization3D({
     ctx.font = "bold 18px sans-serif"
     ctx.fillText("Y", yEnd.x - 25, yEnd.y + 5)
 
-    // Números en eje Y
     ctx.font = "13px sans-serif"
     const ySteps = 5
     for (let i = 0; i <= ySteps; i++) {
@@ -221,7 +213,6 @@ export function Visualization3D({
       ctx.fillText(y.toFixed(1), pos.x - 30, pos.y + 5)
     }
 
-    // Eje Z (azul)
     const zEnd = project3D(0, 0, 20, width, height)
     ctx.strokeStyle = "rgba(59, 130, 246, 0.9)"
     ctx.lineWidth = 3
@@ -234,7 +225,6 @@ export function Visualization3D({
     ctx.font = "bold 18px sans-serif"
     ctx.fillText("Z", zEnd.x - 10, zEnd.y - 15)
 
-    // Números en eje Z
     ctx.font = "13px sans-serif"
     const zSteps = 5
     for (let i = 0; i <= zSteps; i++) {
@@ -326,30 +316,30 @@ export function Visualization3D({
   }
 
   const drawGradientVector = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    if (!selectedPoint || !showGradient || activeTab !== "derivatives") return
+    if (!selectedPoint || activeTab !== "derivatives") return
 
     try {
       const gradient = calculateGradient(functionStr, selectedPoint.x, selectedPoint.y)
       const { dx, dy } = gradient.vector
-      const scale = 0.5
+      const scale = 0.8
 
       const start = project3D(selectedPoint.x, selectedPoint.y, selectedPoint.z, width, height)
 
       const endX = selectedPoint.x + dx * scale
       const endY = selectedPoint.y + dy * scale
-      const endZ = selectedPoint.z + gradient.magnitude * scale
+      const endZ = selectedPoint.z + gradient.magnitude * scale * 0.5
       const end = project3D(endX, endY, endZ, width, height)
 
-      ctx.strokeStyle = "oklch(0.6 0.22 285)"
-      ctx.lineWidth = 3
+      ctx.strokeStyle = "rgba(30, 30, 30, 0.85)"
+      ctx.lineWidth = 4
       ctx.beginPath()
       ctx.moveTo(start.x, start.y)
       ctx.lineTo(end.x, end.y)
       ctx.stroke()
 
       const angle = Math.atan2(end.y - start.y, end.x - start.x)
-      const arrowLength = 10
-      ctx.fillStyle = "oklch(0.6 0.22 285)"
+      const arrowLength = 12
+      ctx.fillStyle = "rgba(30, 30, 30, 0.9)"
       ctx.beginPath()
       ctx.moveTo(end.x, end.y)
       ctx.lineTo(
@@ -364,6 +354,63 @@ export function Visualization3D({
       ctx.fill()
     } catch (error) {
       console.error("[v0] Error drawing gradient vector:", error)
+    }
+  }
+
+  const drawGradientVectorField = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    if (activeTab !== "derivatives" || !selectedPoint) return
+
+    const gridSize = 15
+    const [xMin, xMax] = xRange
+    const [yMin, yMax] = yRange
+    const xStep = (xMax - xMin) / gridSize
+    const yStep = (yMax - yMin) / gridSize
+
+    try {
+      for (let i = 1; i < gridSize; i++) {
+        for (let j = 1; j < gridSize; j++) {
+          const x = xMin + i * xStep
+          const y = yMin + j * yStep
+          const z = evaluateFunction(functionStr, x, y)
+
+          if (!isFinite(z) || isNaN(z)) continue
+
+          const gradient = calculateGradient(functionStr, x, y)
+          const { dx, dy } = gradient.vector
+          const scale = 0.3
+
+          const start = project3D(x, y, z, width, height)
+          const endX = x + dx * scale
+          const endY = y + dy * scale
+          const endZ = z + gradient.magnitude * scale * 0.5
+          const end = project3D(endX, endY, endZ, width, height)
+
+          ctx.strokeStyle = "rgba(30, 30, 30, 0.7)"
+          ctx.lineWidth = 1.5
+          ctx.beginPath()
+          ctx.moveTo(start.x, start.y)
+          ctx.lineTo(end.x, end.y)
+          ctx.stroke()
+
+          const angle = Math.atan2(end.y - start.y, end.x - start.x)
+          const arrowLength = 6
+          ctx.fillStyle = "rgba(30, 30, 30, 0.8)"
+          ctx.beginPath()
+          ctx.moveTo(end.x, end.y)
+          ctx.lineTo(
+            end.x - arrowLength * Math.cos(angle - Math.PI / 6),
+            end.y - arrowLength * Math.sin(angle - Math.PI / 6),
+          )
+          ctx.lineTo(
+            end.x - arrowLength * Math.cos(angle + Math.PI / 6),
+            end.y - arrowLength * Math.sin(angle + Math.PI / 6),
+          )
+          ctx.closePath()
+          ctx.fill()
+        }
+      }
+    } catch (error) {
+      console.error("[v0] Error drawing gradient field:", error)
     }
   }
 
@@ -439,6 +486,9 @@ export function Visualization3D({
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = "high"
+
     const width = canvas.width
     const height = canvas.height
 
@@ -479,37 +529,38 @@ export function Visualization3D({
         const avgZ = (p1.z + p2.z + p3.z + p4.z) / 4
         const normalizedZ = (avgZ - minZ) / (maxZ - minZ || 1)
 
-        // Gradiente de colores: azul → cyan → verde → amarillo → rojo
         let hue, saturation, lightness
-        if (normalizedZ < 0.25) {
-          // Azul a Cyan
-          const t = normalizedZ / 0.25
-          hue = 240 - t * 45 // 240 (azul) a 195 (cyan)
-          saturation = 0.7 + t * 0.1
-          lightness = 0.45 + t * 0.1
-        } else if (normalizedZ < 0.5) {
-          // Cyan a Verde
-          const t = (normalizedZ - 0.25) / 0.25
-          hue = 195 - t * 55 // 195 (cyan) a 140 (verde)
+        if (normalizedZ < 0.2) {
+          const t = normalizedZ / 0.2
+          hue = 250 - t * 20
           saturation = 0.8
+          lightness = 0.35 + t * 0.1
+        } else if (normalizedZ < 0.4) {
+          const t = (normalizedZ - 0.2) / 0.2
+          hue = 230 - t * 35
+          saturation = 0.85
+          lightness = 0.45 + t * 0.05
+        } else if (normalizedZ < 0.6) {
+          const t = (normalizedZ - 0.4) / 0.2
+          hue = 195 - t * 55
+          saturation = 0.8
+          lightness = 0.5 + t * 0.05
+        } else if (normalizedZ < 0.8) {
+          const t = (normalizedZ - 0.6) / 0.2
+          hue = 140 - t * 80
+          saturation = 0.85
           lightness = 0.55 + t * 0.05
-        } else if (normalizedZ < 0.75) {
-          // Verde a Amarillo
-          const t = (normalizedZ - 0.5) / 0.25
-          hue = 140 - t * 80 // 140 (verde) a 60 (amarillo)
-          saturation = 0.8 - t * 0.1
-          lightness = 0.6 + t * 0.05
         } else {
-          // Amarillo a Rojo
-          const t = (normalizedZ - 0.75) / 0.25
-          hue = 60 - t * 60 // 60 (amarillo) a 0 (rojo)
-          saturation = 0.7 + t * 0.2
-          lightness = 0.65 - t * 0.1
+          const t = (normalizedZ - 0.8) / 0.2
+          hue = 60 - t * 50
+          saturation = 0.9
+          lightness = 0.55 - t * 0.05
         }
 
-        // Dibujar cara con relleno
+        const color = `oklch(${lightness} ${saturation} ${hue})`
+
         if (viewMode === "surface") {
-          ctx.fillStyle = `oklch(${lightness} ${saturation} ${hue})`
+          ctx.fillStyle = color
           ctx.beginPath()
           ctx.moveTo(p1.projected.x, p1.projected.y)
           ctx.lineTo(p2.projected.x, p2.projected.y)
@@ -517,21 +568,21 @@ export function Visualization3D({
           ctx.lineTo(p3.projected.x, p3.projected.y)
           ctx.closePath()
           ctx.fill()
+          // NO ctx.stroke() para superficie completamente lisa
+        } else {
+          ctx.strokeStyle = color
+          ctx.lineWidth = 0.8
+
+          ctx.beginPath()
+          ctx.moveTo(p1.projected.x, p1.projected.y)
+          ctx.lineTo(p2.projected.x, p2.projected.y)
+          ctx.stroke()
+
+          ctx.beginPath()
+          ctx.moveTo(p1.projected.x, p1.projected.y)
+          ctx.lineTo(p3.projected.x, p3.projected.y)
+          ctx.stroke()
         }
-
-        // Dibujar líneas de la malla
-        ctx.strokeStyle = `oklch(${lightness * 0.8} ${saturation * 0.9} ${hue})`
-        ctx.lineWidth = viewMode === "wireframe" ? 0.8 : 0.5
-
-        ctx.beginPath()
-        ctx.moveTo(p1.projected.x, p1.projected.y)
-        ctx.lineTo(p2.projected.x, p2.projected.y)
-        ctx.stroke()
-
-        ctx.beginPath()
-        ctx.moveTo(p1.projected.x, p1.projected.y)
-        ctx.lineTo(p3.projected.x, p3.projected.y)
-        ctx.stroke()
       }
     }
 
@@ -539,16 +590,21 @@ export function Visualization3D({
     drawIntegrationRegion(ctx, width, height)
     drawConstraintCurve(ctx, width, height)
     drawTangentPlane(ctx, width, height)
-    drawGradientVector(ctx, width, height)
+
+    if (selectedPoint && activeTab === "derivatives") {
+      drawGradientVectorField(ctx, width, height)
+      drawGradientVector(ctx, width, height)
+    }
+
     drawCriticalPoints(ctx, width, height)
 
     if (selectedPoint) {
       const proj = project3D(selectedPoint.x, selectedPoint.y, selectedPoint.z, width, height)
-      ctx.fillStyle = "oklch(0.70 0.19 195)"
+      ctx.fillStyle = "rgba(236, 72, 153, 0.9)"
       ctx.beginPath()
-      ctx.arc(proj.x, proj.y, 6, 0, Math.PI * 2)
+      ctx.arc(proj.x, proj.y, 7, 0, Math.PI * 2)
       ctx.fill()
-      ctx.strokeStyle = "oklch(0.99 0.005 240)"
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.9)"
       ctx.lineWidth = 2
       ctx.stroke()
     }
@@ -564,7 +620,7 @@ export function Visualization3D({
   useEffect(() => {
     if (isAnimating) {
       const animate = () => {
-        setRotation((prev) => ({ ...prev, y: prev.y + 0.005 })) // Rotación más lenta
+        setRotation((prev) => ({ ...prev, y: prev.y + 0.005 }))
         animationRef.current = requestAnimationFrame(animate)
       }
       animationRef.current = requestAnimationFrame(animate)
@@ -596,6 +652,7 @@ export function Visualization3D({
     integralBounds,
     xRange,
     yRange,
+    activeTab,
   ])
 
   useEffect(() => {
@@ -734,7 +791,7 @@ export function Visualization3D({
               variant={viewMode === "surface" ? "default" : "ghost"}
               size="icon"
               onClick={() => setViewMode("surface")}
-              title="Vista sólida con malla"
+              title="Superficie lisa (sin líneas)"
             >
               <Box className="h-4 w-4" />
             </Button>
@@ -742,7 +799,7 @@ export function Visualization3D({
               variant={viewMode === "wireframe" ? "default" : "ghost"}
               size="icon"
               onClick={() => setViewMode("wireframe")}
-              title="Solo malla"
+              title="Solo malla de líneas"
             >
               <Grid3x3 className="h-4 w-4" />
             </Button>
@@ -758,7 +815,7 @@ export function Visualization3D({
           {activeTab === "derivatives" && (
             <>
               {" • "}
-              <span className="font-medium text-foreground">Click:</span> Seleccionar punto
+              <span className="font-medium text-foreground">Click:</span> Seleccionar punto para gradiente
             </>
           )}
         </p>
