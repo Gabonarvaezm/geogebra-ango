@@ -51,18 +51,24 @@ function validateExpression(expr: string): { valid: boolean; error?: string } {
   return { valid: true }
 }
 
+const compiledCache = new Map<string, Function>()
+
 export function evaluateFunction(expr: string, x: number, y: number): number {
   try {
-    // Validar sintaxis primero
-    const validation = validateExpression(expr)
-    if (!validation.valid) {
-      console.error("[v0] Validation error:", validation.error)
-      return Number.NaN
+    // Usar compilación y validación en caché para acelerar evaluaciones repetidas
+    let func = compiledCache.get(expr)
+    if (!func) {
+      const validation = validateExpression(expr)
+      if (!validation.valid) {
+        console.error("[v0] Validation error:", validation.error)
+        return Number.NaN
+      }
+      const parsed = parseMathExpression(expr)
+      func = new Function("x", "y", "Math", `"use strict"; return ${parsed}`)
+      compiledCache.set(expr, func)
     }
 
-    const parsed = parseMathExpression(expr)
-    const func = new Function("x", "y", "Math", `"use strict"; return ${parsed}`)
-    const result = func(x, y, Math)
+    const result = (func as Function)(x, y, Math)
 
     // Verificar si el resultado es válido
     if (!isFinite(result)) {

@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { RotateCcw, ZoomIn, ZoomOut, Play, Pause, Grid3x3, Box } from "lucide-react"
+import { RotateCcw, ZoomIn, ZoomOut, Play, Pause, ArrowUpRight, Layers, MoveVertical } from "lucide-react"
 import { evaluateFunction, calculateGradient } from "@/lib/math-parser"
 
 interface Visualization3DProps {
@@ -31,19 +31,30 @@ export function Visualization3D({
   yRange,
 }: Visualization3DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [rotation, setRotation] = useState({ x: 0.6, y: 0.8 })
+  // Orientación invertida por defecto: rotar Y 90° para que el pico apunte hacia arriba
+  const [rotation, setRotation] = useState({ x: 0, y: Math.PI / 2 })
   const [zoom, setZoom] = useState(1.2)
   const [isAnimating, setIsAnimating] = useState(false)
-  const [viewMode, setViewMode] = useState<"surface" | "wireframe">("surface")
-  const [showGradient, setShowGradient] = useState(true)
-  const [showTangentPlane, setShowTangentPlane] = useState(true)
+  // Eliminado modo de superficie/malla: solo contornos
+  const [showGradient, setShowGradient] = useState(false)
+  const [showTangentPlane, setShowTangentPlane] = useState(false)
+  // Estilo GeoGebra: plano XY gris y ejes coloreados
+  const [geoStyle, setGeoStyle] = useState(true)
+  // Mostrar contornos (por defecto desactivado para vista lisa)
+  const [showContours, setShowContours] = useState(false)
+  // Nueva opción: superficie lisa rellena
+  const [showSmoothSurface, setShowSmoothSurface] = useState(true)
+  // Overlay de malla eliminado
   const [hasInfiniteValues, setHasInfiniteValues] = useState(false)
-  const animationRef = useRef<number>()
+  const animationRef = useRef<number | null>(null)
   const isDragging = useRef(false)
   const lastMouse = useRef({ x: 0, y: 0 })
 
   const generateSurfaceData = () => {
-    const resolution = 120
+    // resolución adaptativa según zoom y animación
+    const baseRes = 90
+    const resFactor = Math.max(0.8, Math.min(1.4, zoom))
+    const resolution = Math.max(40, Math.min(100, Math.round(baseRes * (isAnimating ? 0.7 : 1) * resFactor)))
     const [xMin, xMax] = xRange
     const [yMin, yMax] = yRange
     const xStep = (xMax - xMin) / resolution
@@ -105,17 +116,44 @@ export function Visualization3D({
     return { x: screenX, y: screenY, depth: z2 }
   }
 
+  // Proyección con zoom local para cálculo de autoajuste (no usa estado de zoom)
+  const project3DWithZoom = (
+    x: number,
+    y: number,
+    z: number,
+    width: number,
+    height: number,
+    zoomLocal: number,
+  ) => {
+    const scale = 30 * zoomLocal
+    const cosX = Math.cos(rotation.x)
+    const sinX = Math.sin(rotation.x)
+    const cosY = Math.cos(rotation.y)
+    const sinY = Math.sin(rotation.y)
+
+    const x1 = x * cosY - z * sinY
+    const z1 = x * sinY + z * cosY
+
+    const y1 = y * cosX - z1 * sinX
+    const z2 = y * sinX + z1 * cosX
+
+    const screenX = width / 2 + x1 * scale
+    const screenY = height / 2 - y1 * scale
+
+    return { x: screenX, y: screenY, depth: z2, x1, y1 }
+  }
+
   const drawBackgroundPlanes = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     const [xMin, xMax] = xRange
     const [yMin, yMax] = yRange
     const zMin = -20
     const zMax = 20
 
-    ctx.fillStyle = "rgba(240, 240, 245, 0.15)"
-    ctx.strokeStyle = "rgba(150, 150, 160, 0.4)"
-    ctx.lineWidth = 1
+    ctx.fillStyle = "rgba(240, 240, 245, 0.08)"
+    ctx.strokeStyle = "rgba(150, 150, 160, 0.18)"
+    ctx.lineWidth = 0.75
 
-    const gridSteps = 10
+    const gridSteps = 6
     for (let i = 0; i <= gridSteps; i++) {
       const x = xMin + (i / gridSteps) * (xMax - xMin)
       const start = project3D(x, yMin, zMin, width, height)
@@ -136,7 +174,7 @@ export function Visualization3D({
       ctx.stroke()
     }
 
-    ctx.fillStyle = "rgba(240, 240, 245, 0.08)"
+    ctx.fillStyle = "rgba(240, 240, 245, 0.06)"
     for (let i = 0; i <= gridSteps; i++) {
       const y = yMin + (i / gridSteps) * (yMax - yMin)
       const start = project3D(xMin, y, zMin, width, height)
@@ -168,25 +206,240 @@ export function Visualization3D({
     }
   }
 
+  // Plano XY estilo vintage (tono pergamino)
+  const drawGeoPlane = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const [xMin, xMax] = xRange
+    const [yMin, yMax] = yRange
+    const padX = (xMax - xMin) * 0.4
+    const padY = (yMax - yMin) * 0.4
+    const corners = [
+      { x: xMin - padX, y: yMin - padY, z: 0 },
+      { x: xMax + padX, y: yMin - padY, z: 0 },
+      { x: xMax + padX, y: yMax + padY, z: 0 },
+      { x: xMin - padX, y: yMax + padY, z: 0 },
+    ]
+    const p = corners.map((c) => project3D(c.x, c.y, c.z, width, height))
+    ctx.fillStyle = "rgba(228, 214, 196, 0.65)"
+    ctx.beginPath()
+    ctx.moveTo(p[0].x, p[0].y)
+    for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y)
+    ctx.closePath()
+    ctx.fill()
+    // Borde sutil
+    ctx.strokeStyle = "rgba(120, 95, 75, 0.25)"
+    ctx.lineWidth = 1
+    ctx.stroke()
+  }
+
+  // Ejes con estilo vintage y etiquetas en fuente con serif
+  const drawGeoAxes = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const [xMin, xMax] = xRange
+    const [yMin, yMax] = yRange
+    const origin = project3D(0, 0, 0, width, height)
+
+    // X
+    const xEnd = project3D(xMax, 0, 0, width, height)
+    ctx.strokeStyle = "rgba(75, 46, 43, 0.95)"
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    ctx.moveTo(project3D(xMin, 0, 0, width, height).x, project3D(xMin, 0, 0, width, height).y)
+    ctx.lineTo(xEnd.x, xEnd.y)
+    ctx.stroke()
+    // flecha X
+    const angX = Math.atan2(xEnd.y - origin.y, xEnd.x - origin.x)
+    ctx.beginPath()
+    ctx.moveTo(xEnd.x, xEnd.y)
+    ctx.lineTo(xEnd.x - 12 * Math.cos(angX - Math.PI / 6), xEnd.y - 12 * Math.sin(angX - Math.PI / 6))
+    ctx.lineTo(xEnd.x - 12 * Math.cos(angX + Math.PI / 6), xEnd.y - 12 * Math.sin(angX + Math.PI / 6))
+    ctx.closePath()
+    ctx.fillStyle = "rgba(75, 46, 43, 0.95)"
+    ctx.fill()
+
+    // Y
+    const yEnd = project3D(0, yMax, 0, width, height)
+    ctx.strokeStyle = "rgba(75, 46, 43, 0.95)"
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    ctx.moveTo(project3D(0, yMin, 0, width, height).x, project3D(0, yMin, 0, width, height).y)
+    ctx.lineTo(yEnd.x, yEnd.y)
+    ctx.stroke()
+    const angY = Math.atan2(yEnd.y - origin.y, yEnd.x - origin.x)
+    ctx.beginPath()
+    ctx.moveTo(yEnd.x, yEnd.y)
+    ctx.lineTo(yEnd.x - 12 * Math.cos(angY - Math.PI / 6), yEnd.y - 12 * Math.sin(angY - Math.PI / 6))
+    ctx.lineTo(yEnd.x - 12 * Math.cos(angY + Math.PI / 6), yEnd.y - 12 * Math.sin(angY + Math.PI / 6))
+    ctx.closePath()
+    ctx.fillStyle = "rgba(75, 46, 43, 0.95)"
+    ctx.fill()
+
+    // Z
+    const zEnd = project3D(0, 0, Math.max(20, (yMax - yMin + xMax - xMin) / 2), width, height)
+    ctx.strokeStyle = "rgba(75, 46, 43, 0.95)"
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    ctx.moveTo(origin.x, origin.y)
+    ctx.lineTo(zEnd.x, zEnd.y)
+    ctx.stroke()
+    const angZ = Math.atan2(zEnd.y - origin.y, zEnd.x - origin.x)
+    ctx.beginPath()
+    ctx.moveTo(zEnd.x, zEnd.y)
+    ctx.lineTo(zEnd.x - 12 * Math.cos(angZ - Math.PI / 6), zEnd.y - 12 * Math.sin(angZ - Math.PI / 6))
+    ctx.lineTo(zEnd.x - 12 * Math.cos(angZ + Math.PI / 6), zEnd.y - 12 * Math.sin(angZ + Math.PI / 6))
+    ctx.closePath()
+    ctx.fillStyle = "rgba(75, 46, 43, 0.95)"
+    ctx.fill()
+
+    // Ticks numéricos (cada 10 unidades aprox.)
+    const ticks = 12
+    ctx.font = "12px Georgia, serif"
+    ctx.fillStyle = "#2b1f1d"
+    for (let i = 0; i <= ticks; i++) {
+      const xv = xMin + (i / ticks) * (xMax - xMin)
+      const xp = project3D(xv, 0, 0, width, height)
+      const ax = Math.atan2(xEnd.y - origin.y, xEnd.x - origin.x)
+      const dx = 6 * Math.sin(ax)
+      const dy = -6 * Math.cos(ax)
+      ctx.beginPath()
+      ctx.moveTo(xp.x - dx, xp.y - dy)
+      ctx.lineTo(xp.x + dx, xp.y + dy)
+      ctx.strokeStyle = "rgba(75, 46, 43, 0.8)"
+      ctx.lineWidth = 1.25
+      ctx.stroke()
+      ctx.fillText(xv.toFixed(0), xp.x + 4, xp.y + 14)
+    }
+    for (let i = 0; i <= ticks; i++) {
+      const yv = yMin + (i / ticks) * (yMax - yMin)
+      const yp = project3D(0, yv, 0, width, height)
+      const ay = Math.atan2(yEnd.y - origin.y, yEnd.x - origin.x)
+      const dx = 6 * Math.sin(ay)
+      const dy = -6 * Math.cos(ay)
+      ctx.beginPath()
+      ctx.moveTo(yp.x - dx, yp.y - dy)
+      ctx.lineTo(yp.x + dx, yp.y + dy)
+      ctx.strokeStyle = "rgba(75, 46, 43, 0.75)"
+      ctx.lineWidth = 1.1
+      ctx.stroke()
+      ctx.fillText(yv.toFixed(0), yp.x - 24, yp.y + 4)
+    }
+  }
+
+  // Contornos en el plano XY usando un marching squares sencillo
+  const drawLevelContours = (
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    minZ: number,
+    maxZ: number,
+  ) => {
+    try {
+      const levelsCount = 6
+      const levels: number[] = []
+      for (let i = 1; i <= levelsCount; i++) {
+        levels.push(minZ + (i / (levelsCount + 1)) * (maxZ - minZ))
+      }
+
+      const nx = 28
+      const ny = 28
+      const [xMin, xMax] = xRange
+      const [yMin, yMax] = yRange
+      const xVals = Array.from({ length: nx + 1 }, (_, i) => xMin + (i / nx) * (xMax - xMin))
+      const yVals = Array.from({ length: ny + 1 }, (_, j) => yMin + (j / ny) * (yMax - yMin))
+
+      const values: number[][] = Array.from({ length: nx + 1 }, () => new Array(ny + 1).fill(0))
+      for (let i = 0; i <= nx; i++) {
+        for (let j = 0; j <= ny; j++) {
+          values[i][j] = evaluateFunction(functionStr, xVals[i], yVals[j])
+        }
+      }
+
+      const intersect = (
+        ax: number,
+        ay: number,
+        av: number,
+        bx: number,
+        by: number,
+        bv: number,
+        L: number,
+      ): { x: number; y: number } | null => {
+        if ((L - av) * (L - bv) > 0 || av === bv) return null
+        const t = (L - av) / (bv - av)
+        return { x: ax + t * (bx - ax), y: ay + t * (by - ay) }
+      }
+
+      // Estilo de contornos vintage (sepia, líneas finas y discontinuas)
+      ctx.strokeStyle = "rgba(70, 50, 40, 0.6)"
+      ctx.lineWidth = 1
+      ctx.setLineDash([4, 3])
+
+      for (const L of levels) {
+        for (let i = 0; i < nx; i++) {
+          for (let j = 0; j < ny; j++) {
+            const x0 = xVals[i]
+            const x1 = xVals[i + 1]
+            const y0 = yVals[j]
+            const y1 = yVals[j + 1]
+
+            const v00 = values[i][j]
+            const v10 = values[i + 1][j]
+            const v01 = values[i][j + 1]
+            const v11 = values[i + 1][j + 1]
+
+            const pts: { x: number; y: number }[] = []
+            const p1 = intersect(x0, y0, v00, x1, y0, v10, L)
+            const p2 = intersect(x1, y0, v10, x1, y1, v11, L)
+            const p3 = intersect(x1, y1, v11, x0, y1, v01, L)
+            const p4 = intersect(x0, y1, v01, x0, y0, v00, L)
+            if (p1) pts.push(p1)
+            if (p2) pts.push(p2)
+            if (p3) pts.push(p3)
+            if (p4) pts.push(p4)
+
+            if (pts.length >= 2) {
+              for (let k = 0; k + 1 < pts.length; k += 2) {
+                const a = project3D(pts[k].x, pts[k].y, 0, width, height)
+                const b = project3D(pts[k + 1].x, pts[k + 1].y, 0, width, height)
+                ctx.beginPath()
+                ctx.moveTo(a.x, a.y)
+                ctx.lineTo(b.x, b.y)
+                ctx.stroke()
+              }
+            }
+          }
+        }
+      }
+      ctx.setLineDash([])
+    } catch (err) {
+      console.warn("[v0] contours error", err)
+    }
+  }
+
   const drawAxesWithLabels = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     const [xMin, xMax] = xRange
     const [yMin, yMax] = yRange
     const origin = project3D(0, 0, 0, width, height)
 
     const xEnd = project3D(xMax, 0, 0, width, height)
-    ctx.strokeStyle = "rgba(220, 38, 38, 0.9)"
-    ctx.lineWidth = 3
+    ctx.strokeStyle = "rgba(30, 30, 35, 0.85)"
+    ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(origin.x, origin.y)
     ctx.lineTo(xEnd.x, xEnd.y)
     ctx.stroke()
 
-    ctx.fillStyle = "rgba(220, 38, 38, 1)"
-    ctx.font = "bold 18px sans-serif"
+    // flecha del eje X
+    const angleX = Math.atan2(xEnd.y - origin.y, xEnd.x - origin.x)
+    ctx.beginPath()
+    ctx.moveTo(xEnd.x, xEnd.y)
+    ctx.lineTo(xEnd.x - 12 * Math.cos(angleX - Math.PI / 6), xEnd.y - 12 * Math.sin(angleX - Math.PI / 6))
+    ctx.lineTo(xEnd.x - 12 * Math.cos(angleX + Math.PI / 6), xEnd.y - 12 * Math.sin(angleX + Math.PI / 6))
+    ctx.closePath()
+    ctx.fillStyle = "rgba(30, 30, 35, 0.85)"
+    ctx.fill()
+    ctx.font = "bold 15px sans-serif"
     ctx.fillText("X", xEnd.x + 15, xEnd.y + 5)
 
-    ctx.font = "13px sans-serif"
-    const xSteps = 5
+    ctx.font = "12px sans-serif"
+    const xSteps = 4
     for (let i = 0; i <= xSteps; i++) {
       const x = xMin + (i / xSteps) * (xMax - xMin)
       const pos = project3D(x, 0, 0, width, height)
@@ -194,19 +447,27 @@ export function Visualization3D({
     }
 
     const yEnd = project3D(0, yMax, 0, width, height)
-    ctx.strokeStyle = "rgba(34, 197, 94, 0.9)"
-    ctx.lineWidth = 3
+    ctx.strokeStyle = "rgba(30, 30, 35, 0.85)"
+    ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(origin.x, origin.y)
     ctx.lineTo(yEnd.x, yEnd.y)
     ctx.stroke()
 
-    ctx.fillStyle = "rgba(34, 197, 94, 1)"
-    ctx.font = "bold 18px sans-serif"
+    // flecha del eje Y
+    const angleY = Math.atan2(yEnd.y - origin.y, yEnd.x - origin.x)
+    ctx.beginPath()
+    ctx.moveTo(yEnd.x, yEnd.y)
+    ctx.lineTo(yEnd.x - 12 * Math.cos(angleY - Math.PI / 6), yEnd.y - 12 * Math.sin(angleY - Math.PI / 6))
+    ctx.lineTo(yEnd.x - 12 * Math.cos(angleY + Math.PI / 6), yEnd.y - 12 * Math.sin(angleY + Math.PI / 6))
+    ctx.closePath()
+    ctx.fillStyle = "rgba(30, 30, 35, 0.85)"
+    ctx.fill()
+    ctx.font = "bold 15px sans-serif"
     ctx.fillText("Y", yEnd.x - 25, yEnd.y + 5)
 
-    ctx.font = "13px sans-serif"
-    const ySteps = 5
+    ctx.font = "12px sans-serif"
+    const ySteps = 4
     for (let i = 0; i <= ySteps; i++) {
       const y = yMin + (i / ySteps) * (yMax - yMin)
       const pos = project3D(0, y, 0, width, height)
@@ -214,19 +475,27 @@ export function Visualization3D({
     }
 
     const zEnd = project3D(0, 0, 20, width, height)
-    ctx.strokeStyle = "rgba(59, 130, 246, 0.9)"
-    ctx.lineWidth = 3
+    ctx.strokeStyle = "rgba(30, 30, 35, 0.85)"
+    ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(origin.x, origin.y)
     ctx.lineTo(zEnd.x, zEnd.y)
     ctx.stroke()
 
-    ctx.fillStyle = "rgba(59, 130, 246, 1)"
-    ctx.font = "bold 18px sans-serif"
+    // flecha del eje Z
+    const angleZ = Math.atan2(zEnd.y - origin.y, zEnd.x - origin.x)
+    ctx.beginPath()
+    ctx.moveTo(zEnd.x, zEnd.y)
+    ctx.lineTo(zEnd.x - 12 * Math.cos(angleZ - Math.PI / 6), zEnd.y - 12 * Math.sin(angleZ - Math.PI / 6))
+    ctx.lineTo(zEnd.x - 12 * Math.cos(angleZ + Math.PI / 6), zEnd.y - 12 * Math.sin(angleZ + Math.PI / 6))
+    ctx.closePath()
+    ctx.fillStyle = "rgba(30, 30, 35, 0.85)"
+    ctx.fill()
+    ctx.font = "bold 15px sans-serif"
     ctx.fillText("Z", zEnd.x - 10, zEnd.y - 15)
 
-    ctx.font = "13px sans-serif"
-    const zSteps = 5
+    ctx.font = "12px sans-serif"
+    const zSteps = 4
     for (let i = 0; i <= zSteps; i++) {
       const z = -20 + (i / zSteps) * 40
       const pos = project3D(0, 0, z, width, height)
@@ -316,12 +585,19 @@ export function Visualization3D({
   }
 
   const drawGradientVector = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    if (!selectedPoint || activeTab !== "derivatives") return
+    if (!selectedPoint || !showGradient) return
 
     try {
       const gradient = calculateGradient(functionStr, selectedPoint.x, selectedPoint.y)
       const { dx, dy } = gradient.vector
-      const scale = 0.8
+      const m = Math.atan(gradient.magnitude) / (Math.PI / 2)
+      // Paleta vintage por magnitud: marrón (baja) → rojo (alta)
+      const hue = 50 - 25 * m
+      const chroma = 0.08 + 0.14 * m
+      const lightness = 0.72 - 0.25 * m
+      const color = `oklch(${lightness} ${chroma} ${hue})`
+      // Flecha 3D más pequeña
+      const scale = 0.65
 
       const start = project3D(selectedPoint.x, selectedPoint.y, selectedPoint.z, width, height)
 
@@ -330,16 +606,18 @@ export function Visualization3D({
       const endZ = selectedPoint.z + gradient.magnitude * scale * 0.5
       const end = project3D(endX, endY, endZ, width, height)
 
-      ctx.strokeStyle = "rgba(30, 30, 30, 0.85)"
-      ctx.lineWidth = 4
+      ctx.shadowColor = "rgba(0,0,0,0.12)"
+      ctx.shadowBlur = 4
+      ctx.strokeStyle = color
+      ctx.lineWidth = 3
       ctx.beginPath()
       ctx.moveTo(start.x, start.y)
       ctx.lineTo(end.x, end.y)
       ctx.stroke()
 
       const angle = Math.atan2(end.y - start.y, end.x - start.x)
-      const arrowLength = 12
-      ctx.fillStyle = "rgba(30, 30, 30, 0.9)"
+      const arrowLength = 9
+      ctx.fillStyle = color
       ctx.beginPath()
       ctx.moveTo(end.x, end.y)
       ctx.lineTo(
@@ -352,49 +630,68 @@ export function Visualization3D({
       )
       ctx.closePath()
       ctx.fill()
+      ctx.shadowColor = "transparent"
+      ctx.shadowBlur = 0
     } catch (error) {
       console.error("[v0] Error drawing gradient vector:", error)
     }
   }
 
   const drawGradientVectorField = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    if (activeTab !== "derivatives" || !selectedPoint) return
+    // Mostrar el campo sólo cuando el usuario lo activa y selecciona un punto
+    if (!showGradient || !selectedPoint) return
 
-    const gridSize = 15
+    // Región local alrededor del punto seleccionado
     const [xMin, xMax] = xRange
     const [yMin, yMax] = yRange
-    const xStep = (xMax - xMin) / gridSize
-    const yStep = (yMax - yMin) / gridSize
+    const spanX = xMax - xMin
+    const spanY = yMax - yMin
+    const radiusX = spanX * 0.15
+    const radiusY = spanY * 0.15
+
+    const gridSize = isAnimating ? 8 : 10
+    const xStart = Math.max(xMin, selectedPoint.x - radiusX)
+    const xEnd = Math.min(xMax, selectedPoint.x + radiusX)
+    const yStart = Math.max(yMin, selectedPoint.y - radiusY)
+    const yEnd = Math.min(yMax, selectedPoint.y + radiusY)
+    const xStep = (xEnd - xStart) / gridSize
+    const yStep = (yEnd - yStart) / gridSize
 
     try {
       for (let i = 1; i < gridSize; i++) {
         for (let j = 1; j < gridSize; j++) {
-          const x = xMin + i * xStep
-          const y = yMin + j * yStep
-          const z = evaluateFunction(functionStr, x, y)
-
-          if (!isFinite(z) || isNaN(z)) continue
-
+          const x = xStart + i * xStep
+          const y = yStart + j * yStep
           const gradient = calculateGradient(functionStr, x, y)
           const { dx, dy } = gradient.vector
-          const scale = 0.3
+          if (!isFinite(dx) || !isFinite(dy) || !isFinite(gradient.magnitude)) continue
+          const m = Math.atan(gradient.magnitude) / (Math.PI / 2)
+          // Paleta vintage por magnitud: marrón (baja) → rojo (alta)
+          const hue = 50 - 25 * m
+          const chroma = 0.08 + 0.14 * m
+          const lightness = 0.72 - 0.25 * m
+          const color = `oklch(${lightness} ${chroma} ${hue})`
 
-          const start = project3D(x, y, z, width, height)
+          // Flecha 3D pequeña sobre la superficie: z = f(x,y)
+          const zLocal = evaluateFunction(functionStr, x, y)
+          if (!isFinite(zLocal)) continue
+          const scale = 0.08 + 0.15 * m
+          const start = project3D(x, y, zLocal, width, height)
           const endX = x + dx * scale
           const endY = y + dy * scale
-          const endZ = z + gradient.magnitude * scale * 0.5
+          const endZ = zLocal + gradient.magnitude * scale * 0.5
           const end = project3D(endX, endY, endZ, width, height)
 
-          ctx.strokeStyle = "rgba(30, 30, 30, 0.7)"
-          ctx.lineWidth = 1.5
+          ctx.strokeStyle = color
+          ctx.lineWidth = 0.7 + 0.6 * m
           ctx.beginPath()
           ctx.moveTo(start.x, start.y)
           ctx.lineTo(end.x, end.y)
           ctx.stroke()
 
           const angle = Math.atan2(end.y - start.y, end.x - start.x)
-          const arrowLength = 6
-          ctx.fillStyle = "rgba(30, 30, 30, 0.8)"
+          const arrowLength = 3 + 3 * m
+          ctx.fillStyle = color
           ctx.beginPath()
           ctx.moveTo(end.x, end.y)
           ctx.lineTo(
@@ -492,109 +789,114 @@ export function Visualization3D({
     const width = canvas.width
     const height = canvas.height
 
-    ctx.fillStyle = getComputedStyle(canvas).getPropertyValue("--color-background") || "#ffffff"
+    // Fondo vintage tipo pergamino
+    ctx.fillStyle = "#f9f4e8"
     ctx.fillRect(0, 0, width, height)
 
-    const { points, minZ, maxZ } = generateSurfaceData()
+    // Generamos datos si se requieren (contornos o superficie lisa)
+    const needSurfaceData = showContours || showSmoothSurface
+    const surfaceData = needSurfaceData ? generateSurfaceData() : null
+    const minZ = surfaceData?.minZ ?? -20
+    const maxZ = surfaceData?.maxZ ?? 20
 
-    if (points.length === 0) {
-      ctx.fillStyle = getComputedStyle(canvas).getPropertyValue("--color-muted-foreground") || "#666666"
-      ctx.font = "16px sans-serif"
-      ctx.textAlign = "center"
-      ctx.fillText("Error: Función inválida o sin valores finitos", width / 2, height / 2)
-      return
-    }
-
-    drawBackgroundPlanes(ctx, width, height)
-
-    const projectedPoints = points.map((p) => ({
-      ...p,
-      projected: project3D(p.x, p.y, p.z, width, height),
-    }))
-
-    projectedPoints.sort((a, b) => a.projected.depth - b.projected.depth)
-
-    const resolution = Math.sqrt(points.length)
-
-    for (let i = 0; i < resolution - 1; i++) {
-      for (let j = 0; j < resolution - 1; j++) {
-        const idx = i * resolution + j
-        const p1 = projectedPoints[idx]
-        const p2 = projectedPoints[idx + 1]
-        const p3 = projectedPoints[idx + resolution]
-        const p4 = projectedPoints[idx + resolution + 1]
-
-        if (!p1 || !p2 || !p3 || !p4) continue
-
-        const avgZ = (p1.z + p2.z + p3.z + p4.z) / 4
-        const normalizedZ = (avgZ - minZ) / (maxZ - minZ || 1)
-
-        let hue, saturation, lightness
-        if (normalizedZ < 0.2) {
-          const t = normalizedZ / 0.2
-          hue = 250 - t * 20
-          saturation = 0.8
-          lightness = 0.35 + t * 0.1
-        } else if (normalizedZ < 0.4) {
-          const t = (normalizedZ - 0.2) / 0.2
-          hue = 230 - t * 35
-          saturation = 0.85
-          lightness = 0.45 + t * 0.05
-        } else if (normalizedZ < 0.6) {
-          const t = (normalizedZ - 0.4) / 0.2
-          hue = 195 - t * 55
-          saturation = 0.8
-          lightness = 0.5 + t * 0.05
-        } else if (normalizedZ < 0.8) {
-          const t = (normalizedZ - 0.6) / 0.2
-          hue = 140 - t * 80
-          saturation = 0.85
-          lightness = 0.55 + t * 0.05
-        } else {
-          const t = (normalizedZ - 0.8) / 0.2
-          hue = 60 - t * 50
-          saturation = 0.9
-          lightness = 0.55 - t * 0.05
-        }
-
-        const color = `oklch(${lightness} ${saturation} ${hue})`
-
-        if (viewMode === "surface") {
-          ctx.fillStyle = color
-          ctx.beginPath()
-          ctx.moveTo(p1.projected.x, p1.projected.y)
-          ctx.lineTo(p2.projected.x, p2.projected.y)
-          ctx.lineTo(p4.projected.x, p4.projected.y)
-          ctx.lineTo(p3.projected.x, p3.projected.y)
-          ctx.closePath()
-          ctx.fill()
-          // NO ctx.stroke() para superficie completamente lisa
-        } else {
-          ctx.strokeStyle = color
-          ctx.lineWidth = 0.8
-
-          ctx.beginPath()
-          ctx.moveTo(p1.projected.x, p1.projected.y)
-          ctx.lineTo(p2.projected.x, p2.projected.y)
-          ctx.stroke()
-
-          ctx.beginPath()
-          ctx.moveTo(p1.projected.x, p1.projected.y)
-          ctx.lineTo(p3.projected.x, p3.projected.y)
-          ctx.stroke()
+    // Estilo único vintage: plano y ejes siempre visibles
+    drawGeoPlane(ctx, width, height)
+    drawGeoAxes(ctx, width, height)
+      // Si el usuario desea ver la función: contornos sobre el plano
+      if (showContours && surfaceData) {
+        try {
+          drawLevelContours(ctx, width, height, minZ, maxZ)
+        } catch (error) {
+          console.error("[v0] Error drawing contours:", error)
         }
       }
-    }
+      // Superficie lisa sombreada por altura
+      if (showSmoothSurface && surfaceData?.points?.length) {
+        const points = surfaceData.points
+        const resolution = Math.sqrt(points.length)
+        type Tri = {
+          a: { x: number; y: number; depth: number }
+          b: { x: number; y: number; depth: number }
+          c: { x: number; y: number; depth: number }
+          shade: string
+          depthAvg: number
+        }
+        const tris: Tri[] = []
+        const clamp = (v: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v))
+        for (let i = 0; i < resolution - 1; i++) {
+          for (let j = 0; j < resolution - 1; j++) {
+            const idx = i * resolution + j
+            const p1 = points[idx]
+            const p2 = points[idx + 1]
+            const p3 = points[idx + resolution]
+            const p4 = points[idx + resolution + 1]
+            if (!p1 || !p2 || !p3 || !p4) continue
+            const proj1 = project3D(p1.x, p1.y, p1.z, width, height)
+            const proj2 = project3D(p2.x, p2.y, p2.z, width, height)
+            const proj3 = project3D(p3.x, p3.y, p3.z, width, height)
+            const proj4 = project3D(p4.x, p4.y, p4.z, width, height)
+            const avgZ13 = (p1.z + p2.z + p3.z) / 3
+            const avgZ24 = (p2.z + p4.z + p3.z) / 3
+            const t1 = clamp((avgZ13 - minZ) / (maxZ - minZ || 1))
+            const t2 = clamp((avgZ24 - minZ) / (maxZ - minZ || 1))
+            // Gradiente más marcado: claro arriba → oscuro abajo en paleta vintage
+            const H1 = 45 - 25 * t1
+            const H2 = 45 - 25 * t2
+            const L1 = 0.90 - 0.60 * t1
+            const L2 = 0.90 - 0.60 * t2
+            const C1 = 0.06 + 0.18 * t1
+            const C2 = 0.06 + 0.18 * t2
+            tris.push({
+              a: proj1,
+              b: proj2,
+              c: proj3,
+              shade: `oklch(${L1} ${C1} ${H1})`,
+              depthAvg: (proj1.depth + proj2.depth + proj3.depth) / 3,
+            })
+            tris.push({
+              a: proj2,
+              b: proj4,
+              c: proj3,
+              shade: `oklch(${L2} ${C2} ${H2})`,
+              depthAvg: (proj2.depth + proj4.depth + proj3.depth) / 3,
+            })
+          }
+        }
+        tris.sort((u, v) => u.depthAvg - v.depthAvg)
+        ctx.globalAlpha = 0.92
+        for (const t of tris) {
+          ctx.fillStyle = t.shade
+          ctx.beginPath()
+          ctx.moveTo(t.a.x, t.a.y)
+          ctx.lineTo(t.b.x, t.b.y)
+          ctx.lineTo(t.c.x, t.c.y)
+          ctx.closePath()
+          ctx.fill()
+        }
+        ctx.globalAlpha = 1
+      }
+      // Overlays que no dependen de la malla de superficie
+      drawIntegrationRegion(ctx, width, height)
+      drawCriticalPoints(ctx, width, height)
+      if (showGradient) {
+        drawGradientVector(ctx, width, height)
+        drawGradientVectorField(ctx, width, height)
+      }
+      return
+
+    // resetear sombra para elementos posteriores
+    ctx.shadowColor = "transparent"
+    ctx.shadowBlur = 0
+    ctx.shadowOffsetY = 0
 
     drawAxesWithLabels(ctx, width, height)
     drawIntegrationRegion(ctx, width, height)
     drawConstraintCurve(ctx, width, height)
     drawTangentPlane(ctx, width, height)
 
-    if (selectedPoint && activeTab === "derivatives") {
-      drawGradientVectorField(ctx, width, height)
-      drawGradientVector(ctx, width, height)
-    }
+    // Dibujar gradiente si el usuario lo activó (independiente de la pestaña)
+    drawGradientVectorField(ctx, width, height)
+    drawGradientVector(ctx, width, height)
 
     drawCriticalPoints(ctx, width, height)
 
@@ -616,6 +918,47 @@ export function Visualization3D({
       ctx.fillText("⚠ Algunos valores tienden a infinito (limitados a ±20)", 10, height - 10)
     }
   }
+
+  // Autoajustar zoom para que la vista no se vea amontonada según el rango
+  const autoFitDoneRef = useRef(false)
+  useEffect(() => {
+    autoFitDoneRef.current = false
+  }, [functionStr, xRange, yRange])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || autoFitDoneRef.current) return
+    const width = canvas.width
+    const height = canvas.height
+
+    const [xMin, xMax] = xRange
+    const [yMin, yMax] = yRange
+
+    // Usar las esquinas del plano XY para estimar el encuadre
+    const corners = [
+      { x: xMin, y: yMin, z: 0 },
+      { x: xMax, y: yMin, z: 0 },
+      { x: xMax, y: yMax, z: 0 },
+      { x: xMin, y: yMax, z: 0 },
+    ]
+
+    // Proyectar con zoom = 1 para medir extents en espacio rotado
+    const projected = corners.map((c) => project3DWithZoom(c.x, c.y, c.z, width, height, 1))
+    const maxAbsX1 = Math.max(...projected.map((p) => Math.abs(p.x1))) || 1
+    const maxAbsY1 = Math.max(...projected.map((p) => Math.abs(p.y1))) || 1
+
+    const targetZoomX = (width * 0.45) / (30 * maxAbsX1)
+    const targetZoomY = (height * 0.45) / (30 * maxAbsY1)
+    let targetZoom = Math.min(targetZoomX, targetZoomY)
+    // Limitar a un rango razonable para no exagerar
+    targetZoom = Math.max(0.6, Math.min(2.2, targetZoom))
+
+    // Aplicar solo si difiere lo suficiente
+    if (Math.abs(targetZoom - zoom) > 0.08) {
+      setZoom(targetZoom)
+    }
+    autoFitDoneRef.current = true
+  }, [rotation, xRange, yRange])
 
   useEffect(() => {
     if (isAnimating) {
@@ -643,7 +986,6 @@ export function Visualization3D({
     functionStr,
     rotation,
     zoom,
-    viewMode,
     selectedPoint,
     showGradient,
     showTangentPlane,
@@ -703,7 +1045,8 @@ export function Visualization3D({
   }
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (activeTab !== "derivatives") return
+    // Solo permitir selección de punto cuando el usuario quiere ver gradiente
+    if (!showGradient) return
 
     const canvas = canvasRef.current
     if (!canvas) return
@@ -767,7 +1110,20 @@ export function Visualization3D({
               variant="ghost"
               size="icon"
               onClick={() => {
-                setRotation({ x: 0.6, y: 0.8 })
+                // Vista vertical invertida: eje X pasa a Z
+                setRotation({ x: 0, y: Math.PI / 2 })
+                setZoom(1.2)
+              }}
+              title="Vista vertical invertida"
+            >
+              <MoveVertical className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                // Reset más claro: ligera inclinación con Y en vertical
+                setRotation({ x: 0.35, y: Math.PI / 2 })
                 setZoom(1.2)
               }}
               title="Resetear vista"
@@ -785,23 +1141,46 @@ export function Visualization3D({
           </div>
         </div>
 
+        {/* Eliminados controles de superficie/malla: sólo contornos */}
+
         <div className="glass-card rounded-lg p-2">
           <div className="flex flex-col gap-1">
             <Button
-              variant={viewMode === "surface" ? "default" : "ghost"}
+              variant={showGradient ? "default" : "ghost"}
               size="icon"
-              onClick={() => setViewMode("surface")}
-              title="Superficie lisa (sin líneas)"
+              onClick={() => setShowGradient((v) => !v)}
+              title={showGradient ? "Ocultar campo gradiente" : "Mostrar campo gradiente"}
             >
-              <Box className="h-4 w-4" />
+              <ArrowUpRight className="h-4 w-4" />
             </Button>
             <Button
-              variant={viewMode === "wireframe" ? "default" : "ghost"}
+              variant={showTangentPlane ? "default" : "ghost"}
               size="icon"
-              onClick={() => setViewMode("wireframe")}
-              title="Solo malla de líneas"
+              onClick={() => setShowTangentPlane((v) => !v)}
+              title={showTangentPlane ? "Ocultar plano tangente" : "Mostrar plano tangente"}
             >
-              <Grid3x3 className="h-4 w-4" />
+              <Layers className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        {/* Control de superficie lisa y contornos */}
+        <div className="glass-card rounded-lg p-2">
+          <div className="flex flex-col gap-1">
+            <Button
+              variant={showSmoothSurface ? "default" : "ghost"}
+              size="icon"
+              onClick={() => setShowSmoothSurface((v) => !v)}
+              title={showSmoothSurface ? "Ocultar superficie lisa" : "Mostrar superficie lisa"}
+            >
+              <MoveVertical className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={showContours ? "default" : "ghost"}
+              size="icon"
+              onClick={() => setShowContours((v) => !v)}
+              title={showContours ? "Ocultar contornos" : "Mostrar contornos"}
+            >
+              <Layers className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -812,7 +1191,7 @@ export function Visualization3D({
           <span className="font-medium text-foreground">Arrastrar:</span> Rotar vista
           {" • "}
           <span className="font-medium text-foreground">Scroll:</span> Zoom
-          {activeTab === "derivatives" && (
+          {showGradient && (
             <>
               {" • "}
               <span className="font-medium text-foreground">Click:</span> Seleccionar punto para gradiente
