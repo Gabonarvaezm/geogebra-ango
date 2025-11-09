@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   title: 'web geometry',
   description: 'Created by Ango',
   generator: 'Ango',
+  icons: {
+    icon: '/placeholder-logo.svg',
+  },
 }
 
 export default function RootLayout({

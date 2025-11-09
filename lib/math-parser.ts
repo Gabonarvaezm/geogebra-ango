@@ -207,6 +207,40 @@ export function calculateDoubleIntegral(
   return sum
 }
 
+// Cálculo de volumen: integral doble del valor absoluto
+// Volumen ≈ ∬ |f(x,y)| dA en la región [xMin,xMax]×[yMin,yMax]
+export function calculateDoubleIntegralAbs(
+  expr: string,
+  xMin: number,
+  xMax: number,
+  yMin: number,
+  yMax: number,
+  divisions = 50,
+): number {
+  const validation = validateExpression(expr)
+  if (!validation.valid) {
+    throw new Error(validation.error)
+  }
+
+  const dx = (xMax - xMin) / divisions
+  const dy = (yMax - yMin) / divisions
+  let sum = 0
+
+  for (let i = 0; i < divisions; i++) {
+    for (let j = 0; j < divisions; j++) {
+      const x = xMin + (i + 0.5) * dx
+      const y = yMin + (j + 0.5) * dy
+      const z = evaluateFunction(expr, x, y)
+
+      if (!isNaN(z) && isFinite(z)) {
+        sum += Math.abs(z) * dx * dy
+      }
+    }
+  }
+
+  return sum
+}
+
 export function calculateDomainAndRange(
   expr: string,
   xMin: number,

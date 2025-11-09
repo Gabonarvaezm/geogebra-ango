@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { X, FenceIcon as Function, TrendingUp, Target, Sigma, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { findLagrangeCriticalPoints, calculateDoubleIntegral } from "@/lib/math-parser"
+import { findLagrangeCriticalPoints, calculateDoubleIntegral, calculateDoubleIntegralAbs } from "@/lib/math-parser"
 import { useToast } from "@/hooks/use-toast"
 
 interface SidebarProps {
@@ -65,6 +65,8 @@ export function Sidebar({
   const [xMax, setXMax] = useState(2)
   const [yMin, setYMin] = useState(-2)
   const [yMax, setYMax] = useState(2)
+  const [divisions, setDivisions] = useState(50)
+  const [useAbsoluteVolume, setUseAbsoluteVolume] = useState(true)
   const { toast } = useToast()
 
   const handleApply = () => {
@@ -119,9 +121,12 @@ export function Sidebar({
 
   const handleCalculateIntegral = () => {
     try {
-      const value = calculateDoubleIntegral(currentFunction, xMin, xMax, yMin, yMax)
+      const value = calculateDoubleIntegral(currentFunction, xMin, xMax, yMin, yMax, divisions)
       const area = (xMax - xMin) * (yMax - yMin)
-      const volume = Math.abs(value)
+      // Volumen configurable: absoluto (∬|f| dA) o firmado (∬f dA)
+      const volume = useAbsoluteVolume
+        ? calculateDoubleIntegralAbs(currentFunction, xMin, xMax, yMin, yMax, divisions)
+        : calculateDoubleIntegral(currentFunction, xMin, xMax, yMin, yMax, divisions)
 
       onIntegralCalculated({
         value,
@@ -455,20 +460,46 @@ export function Sidebar({
                         className="h-8"
                       />
                     </div>
-                  </div>
                 </div>
+              </div>
 
-                <Button className="w-full" onClick={handleCalculateIntegral}>
-                  Calcular Integral
-                </Button>
+              {/* Controles de método */}
+              <div className="mt-2 grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="divisions">Subdivisiones</Label>
+                  <Input
+                    id="divisions"
+                    type="number"
+                    min={10}
+                    max={200}
+                    value={divisions}
+                    onChange={(e) => setDivisions(Math.max(10, Math.min(200, Number(e.target.value))))}
+                    className="h-8"
+                  />
+                </div>
+                <div className="flex items-end gap-2">
+                  <Switch
+                    id="abs-volume"
+                    checked={useAbsoluteVolume}
+                    onCheckedChange={(v) => setUseAbsoluteVolume(!!v)}
+                  />
+                  <Label htmlFor="abs-volume" className="text-sm">
+                    Volumen absoluto (∬|f| dA)
+                  </Label>
+                </div>
+              </div>
 
-                <Card className="border-primary/20 bg-primary/5 p-4">
-                  <h4 className="mb-2 font-medium text-sm">Método</h4>
-                  <p className="text-xs text-muted-foreground">
-                    Se usa integración numérica de Riemann con 50×50 subdivisiones para aproximar el valor de la
-                    integral doble.
-                  </p>
-                </Card>
+              <Button className="w-full" onClick={handleCalculateIntegral}>
+                Calcular Integral
+              </Button>
+
+              <Card className="border-primary/20 bg-primary/5 p-4">
+                <h4 className="mb-2 font-medium text-sm">Método</h4>
+                <p className="text-xs text-muted-foreground">
+                  Integración numérica de Riemann con subdivisiones configurables. El volumen puede calcularse como
+                  integral firmada ∬f dA o absoluta ∬|f| dA.
+                </p>
+              </Card>
               </div>
             )}
           </ScrollArea>

@@ -782,16 +782,18 @@ export function Visualization3D({
 
     const ctx = canvas.getContext("2d")
     if (!ctx) return
+    // Asegurar tipo no nulo para TypeScript en el resto del render
+    const g: CanvasRenderingContext2D = ctx
 
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = "high"
+    g.imageSmoothingEnabled = true
+    g.imageSmoothingQuality = "high"
 
     const width = canvas.width
     const height = canvas.height
 
     // Fondo vintage tipo pergamino
-    ctx.fillStyle = "#f9f4e8"
-    ctx.fillRect(0, 0, width, height)
+    g.fillStyle = "#f9f4e8"
+    g.fillRect(0, 0, width, height)
 
     // Generamos datos si se requieren (contornos o superficie lisa)
     const needSurfaceData = showContours || showSmoothSurface
@@ -800,12 +802,12 @@ export function Visualization3D({
     const maxZ = surfaceData?.maxZ ?? 20
 
     // Estilo único vintage: plano y ejes siempre visibles
-    drawGeoPlane(ctx, width, height)
-    drawGeoAxes(ctx, width, height)
+    drawGeoPlane(g, width, height)
+    drawGeoAxes(g, width, height)
       // Si el usuario desea ver la función: contornos sobre el plano
       if (showContours && surfaceData) {
         try {
-          drawLevelContours(ctx, width, height, minZ, maxZ)
+          drawLevelContours(g, width, height, minZ, maxZ)
         } catch (error) {
           console.error("[v0] Error drawing contours:", error)
         }
@@ -863,59 +865,60 @@ export function Visualization3D({
           }
         }
         tris.sort((u, v) => u.depthAvg - v.depthAvg)
-        ctx.globalAlpha = 0.92
+        g.globalAlpha = 0.92
         for (const t of tris) {
-          ctx.fillStyle = t.shade
-          ctx.beginPath()
-          ctx.moveTo(t.a.x, t.a.y)
-          ctx.lineTo(t.b.x, t.b.y)
-          ctx.lineTo(t.c.x, t.c.y)
-          ctx.closePath()
-          ctx.fill()
+          g.fillStyle = t.shade
+          g.beginPath()
+          g.moveTo(t.a.x, t.a.y)
+          g.lineTo(t.b.x, t.b.y)
+          g.lineTo(t.c.x, t.c.y)
+          g.closePath()
+          g.fill()
         }
-        ctx.globalAlpha = 1
+        g.globalAlpha = 1
       }
       // Overlays que no dependen de la malla de superficie
-      drawIntegrationRegion(ctx, width, height)
-      drawCriticalPoints(ctx, width, height)
+      drawIntegrationRegion(g, width, height)
+      drawCriticalPoints(g, width, height)
       if (showGradient) {
-        drawGradientVector(ctx, width, height)
-        drawGradientVectorField(ctx, width, height)
+        drawGradientVector(g, width, height)
+        drawGradientVectorField(g, width, height)
       }
       return
 
     // resetear sombra para elementos posteriores
-    ctx.shadowColor = "transparent"
-    ctx.shadowBlur = 0
-    ctx.shadowOffsetY = 0
+    g.shadowColor = "transparent"
+    g.shadowBlur = 0
+    g.shadowOffsetY = 0
 
-    drawAxesWithLabels(ctx, width, height)
-    drawIntegrationRegion(ctx, width, height)
-    drawConstraintCurve(ctx, width, height)
-    drawTangentPlane(ctx, width, height)
+    drawAxesWithLabels(g, width, height)
+    drawIntegrationRegion(g, width, height)
+    drawConstraintCurve(g, width, height)
+    drawTangentPlane(g, width, height)
 
     // Dibujar gradiente si el usuario lo activó (independiente de la pestaña)
-    drawGradientVectorField(ctx, width, height)
-    drawGradientVector(ctx, width, height)
+    drawGradientVectorField(g, width, height)
+    drawGradientVector(g, width, height)
 
-    drawCriticalPoints(ctx, width, height)
+    drawCriticalPoints(g, width, height)
 
     if (selectedPoint) {
-      const proj = project3D(selectedPoint.x, selectedPoint.y, selectedPoint.z, width, height)
-      ctx.fillStyle = "rgba(236, 72, 153, 0.9)"
-      ctx.beginPath()
-      ctx.arc(proj.x, proj.y, 7, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.9)"
-      ctx.lineWidth = 2
-      ctx.stroke()
+      const sp = selectedPoint!
+      const proj = project3D(sp.x, sp.y, sp.z, width, height)
+      g.fillStyle = "rgba(236, 72, 153, 0.9)"
+      g.beginPath()
+      g.arc(proj.x, proj.y, 7, 0, Math.PI * 2)
+      g.fill()
+      g.strokeStyle = "rgba(255, 255, 255, 0.9)"
+      g.lineWidth = 2
+      g.stroke()
     }
 
     if (hasInfiniteValues) {
-      ctx.fillStyle = "oklch(0.60 0.25 30)"
-      ctx.font = "12px sans-serif"
-      ctx.textAlign = "left"
-      ctx.fillText("⚠ Algunos valores tienden a infinito (limitados a ±20)", 10, height - 10)
+      g.fillStyle = "oklch(0.60 0.25 30)"
+      g.font = "12px sans-serif"
+      g.textAlign = "left"
+      g.fillText("⚠ Algunos valores tienden a infinito (limitados a ±20)", 10, height - 10)
     }
   }
 
@@ -1012,7 +1015,18 @@ export function Visualization3D({
 
     resizeCanvas()
     window.addEventListener("resize", resizeCanvas)
-    return () => window.removeEventListener("resize", resizeCanvas)
+    // Listener de wheel con passive:false para permitir preventDefault (evitar scroll de página)
+    const wheelListener = (e: WheelEvent) => {
+      e.preventDefault()
+      const delta = e.deltaY > 0 ? 0.9 : 1.1
+      setZoom((prev) => Math.max(0.5, Math.min(3, prev * delta)))
+    }
+    canvas.addEventListener("wheel", wheelListener, { passive: false })
+
+    return () => {
+      window.removeEventListener("resize", resizeCanvas)
+      canvas.removeEventListener("wheel", wheelListener)
+    }
   }, [])
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1039,7 +1053,6 @@ export function Visualization3D({
   }
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
     setZoom((prev) => Math.max(0.5, Math.min(3, prev * delta)))
   }
@@ -1083,7 +1096,6 @@ export function Visualization3D({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
         onClick={handleCanvasClick}
       />
 
