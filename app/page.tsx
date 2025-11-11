@@ -105,6 +105,8 @@ export default function Home() {
           constraintFunction={constraintFunction}
           criticalPoints={criticalPoints}
           integralResult={integralResult}
+          xRange={xRange}
+          yRange={yRange}
         />
       </div>
     </div>

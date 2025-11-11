@@ -59,42 +59,64 @@ export function Visualization3D({
     const [yMin, yMax] = yRange
     const xStep = (xMax - xMin) / resolution
     const yStep = (yMax - yMin) / resolution
-    const points: { x: number; y: number; z: number }[] = []
+    const grid: number[][] = Array.from({ length: resolution + 1 }, () => new Array(resolution + 1).fill(NaN))
     let infiniteCount = 0
     let minZ = Number.POSITIVE_INFINITY
     let maxZ = Number.NEGATIVE_INFINITY
 
     try {
+      // Primer pase: evaluar sin recorte para obtener min/max reales
       for (let i = 0; i <= resolution; i++) {
         for (let j = 0; j <= resolution; j++) {
           const x = xMin + i * xStep
           const y = yMin + j * yStep
-          let z = evaluateFunction(functionStr, x, y)
+          const z = evaluateFunction(functionStr, x, y)
+          grid[i][j] = z
 
-          if (isNaN(z)) {
+          if (!isFinite(z) || isNaN(z)) {
             infiniteCount++
             continue
           }
 
-          if (!isFinite(z)) {
-            infiniteCount++
-            z = z > 0 ? 20 : -20
-          } else {
-            z = Math.max(-20, Math.min(20, z))
-          }
-
           minZ = Math.min(minZ, z)
           maxZ = Math.max(maxZ, z)
+        }
+      }
+
+      // Añadir margen para evitar cortes bruscos
+      const span = isFinite(maxZ - minZ) && maxZ > minZ ? maxZ - minZ : 1
+      const pad = span * 0.05
+      const zLo = minZ - pad
+      const zHi = maxZ + pad
+
+      // Segundo pase: construir puntos, recortando al rango dinámico
+      const points: { x: number; y: number; z: number }[] = []
+      for (let i = 0; i <= resolution; i++) {
+        for (let j = 0; j <= resolution; j++) {
+          const x = xMin + i * xStep
+          const y = yMin + j * yStep
+          const zRaw = grid[i][j]
+          let z: number
+
+          if (!isFinite(zRaw) || isNaN(zRaw)) {
+            // Para valores no finitos, ubicarlos en el borde más cercano
+            z = zRaw > 0 ? zHi : zLo
+          } else {
+            // Recorte suave al rango dinámico derivado de la función
+            z = Math.max(zLo, Math.min(zHi, zRaw))
+          }
+
           points.push({ x, y, z })
         }
       }
 
       setHasInfiniteValues(infiniteCount > resolution * resolution * 0.1)
+
+      return { points, minZ: zLo, maxZ: zHi }
     } catch (error) {
       console.error("[v0] Error generating surface:", error)
+      return { points: [], minZ: -20, maxZ: 20 }
     }
-
-    return { points, minZ, maxZ }
   }
 
   const project3D = (x: number, y: number, z: number, width: number, height: number) => {
@@ -833,6 +855,10 @@ export function Visualization3D({
             const p3 = points[idx + resolution]
             const p4 = points[idx + resolution + 1]
             if (!p1 || !p2 || !p3 || !p4) continue
+            // Omitir triángulos si alguna altura no es finita
+            if (!isFinite(p1.z) || !isFinite(p2.z) || !isFinite(p3.z) || !isFinite(p4.z)) {
+              continue
+            }
             const proj1 = project3D(p1.x, p1.y, p1.z, width, height)
             const proj2 = project3D(p2.x, p2.y, p2.z, width, height)
             const proj3 = project3D(p3.x, p3.y, p3.z, width, height)

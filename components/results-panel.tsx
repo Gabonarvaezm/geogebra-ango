@@ -17,6 +17,8 @@ interface ResultsPanelProps {
     volume: number
     bounds: { xMin: number; xMax: number; yMin: number; yMax: number }
   } | null
+  xRange?: [number, number]
+  yRange?: [number, number]
 }
 
 export function ResultsPanel({
@@ -26,12 +28,14 @@ export function ResultsPanel({
   constraintFunction,
   criticalPoints,
   integralResult,
+  xRange = [-5, 5],
+  yRange = [-5, 5],
 }: ResultsPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true)
 
   const renderFunctionInfo = () => {
     try {
-      const domainRangeInfo = calculateDomainAndRange(currentFunction, -5, 5, -5, 5)
+      const domainRangeInfo = calculateDomainAndRange(currentFunction, xRange[0], xRange[1], yRange[0], yRange[1])
 
       return (
         <div className="space-y-3">

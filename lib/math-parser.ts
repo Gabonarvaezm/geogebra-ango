@@ -298,6 +298,37 @@ export function calculateDomainAndRange(
   }
 }
 
+// Sugerir un rango de visualización X/Y basado en la función ingresada
+// Heurísticas simples pensadas para una buena vista inicial
+export function suggestXYRange(expr: string): { x: [number, number]; y: [number, number] } {
+  const e = expr.toLowerCase().replace(/\s+/g, "")
+  const PI = Math.PI
+
+  const use = (a: number, b: number): { x: [number, number]; y: [number, number] } => ({ x: [a, b], y: [a, b] })
+
+  // Ondulatorias: mostrar varios periodos
+  if (/sin|cos/.test(e)) return use(-2 * PI, 2 * PI)
+  if (/tan/.test(e)) return use(-PI, PI)
+
+  // Radiales comunes
+  if (/sqrt\(x\^?2\+y\^?2\)|x\^2\+y\^2/.test(e)) return use(-6, 6)
+
+  // Pico localizado: gaussiana o racional decreciente
+  if (/exp\(-?\(?x\^?2\+y\^?2|1\s*\/\s*\(1\+x\^?2\+y\^?2\)/.test(e)) return use(-5, 5)
+
+  // Potencias/Polinomios: abrir un poco más
+  if (/(\bx\b|\by\b).*\^\d/.test(e) || /x\^2|y\^2/.test(e)) return use(-6, 6)
+
+  // Log y sqrt suelen requerir observar cerca de 0 a 5
+  if (/log|ln|sqrt/.test(e)) return use(-5, 5)
+
+  // Plano/lineal
+  if (/\bx\b|\by\b/.test(e)) return use(-8, 8)
+
+  // Predeterminado
+  return use(-5, 5)
+}
+
 export function calculateLimit(
   expr: string,
   x0: number,

@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { X, FenceIcon as Function, TrendingUp, Target, Sigma, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { findLagrangeCriticalPoints, calculateDoubleIntegral, calculateDoubleIntegralAbs } from "@/lib/math-parser"
+import { findLagrangeCriticalPoints, calculateDoubleIntegral, calculateDoubleIntegralAbs, suggestXYRange } from "@/lib/math-parser"
 import { useToast } from "@/hooks/use-toast"
 
 interface SidebarProps {
@@ -67,6 +67,7 @@ export function Sidebar({
   const [yMax, setYMax] = useState(2)
   const [divisions, setDivisions] = useState(50)
   const [useAbsoluteVolume, setUseAbsoluteVolume] = useState(true)
+  const [autoRange, setAutoRange] = useState(true)
   const { toast } = useToast()
 
   const handleApply = () => {
@@ -79,6 +80,12 @@ export function Sidebar({
       return
     }
     onFunctionChange(inputValue)
+    // Ajuste automático del rango X/Y según la función
+    if (autoRange) {
+      const suggested = suggestXYRange(inputValue)
+      onXRangeChange(suggested.x)
+      onYRangeChange(suggested.y)
+    }
     toast({
       title: "Función actualizada",
       description: "La visualización se ha actualizado",
@@ -235,7 +242,13 @@ export function Sidebar({
                 </div>
 
                 <div className="space-y-3">
-                  <Label>Rango de Visualización</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>Rango de Visualización</Label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Auto</span>
+                      <Switch id="auto-range" checked={autoRange} onCheckedChange={setAutoRange} />
+                    </div>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <Label htmlFor="x-range-min" className="text-xs">
@@ -292,6 +305,11 @@ export function Sidebar({
                   <p className="text-xs text-muted-foreground">
                     Ajusta los límites de los ejes X e Y para la visualización
                   </p>
+                  {autoRange && (
+                    <p className="text-xs text-muted-foreground">
+                      El rango se actualiza automáticamente según la función.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -304,6 +322,11 @@ export function Sidebar({
                         onClick={() => {
                           setInputValue(example.formula)
                           onFunctionChange(example.formula)
+                          if (autoRange) {
+                            const s = suggestXYRange(example.formula)
+                            onXRangeChange(s.x)
+                            onYRangeChange(s.y)
+                          }
                         }}
                       >
                         <div className="flex items-start justify-between">
